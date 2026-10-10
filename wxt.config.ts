@@ -36,6 +36,10 @@ export default defineConfig({
       },
     }),
   }),
+  zip: {
+    artifactTemplate: 'read-aloud-sarvam-{{version}}-{{browser}}.zip',
+    sourcesTemplate: 'read-aloud-sarvam-{{version}}-sources.zip',
+  },
   hooks: {
     // Safari 26 can't open a debugger for a service-worker background, and
     // non-persistent background scripts are its default anyway.

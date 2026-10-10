@@ -1,9 +1,14 @@
 {
   "name": "web-readaloud-extension",
-  "description": "Read web articles aloud with natural Indian-English voices from Sarvam AI",
+  "description": "Listen to any web article in natural Indian-English voices (Sarvam AI), with sentence highlighting, jump-to-line and a two-host podcast mode.",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SiddharthChillale/web-readaloud-extension.git"
+  },
+  "packageManager": "pnpm@10.30.3",
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
@@ -13,6 +18,8 @@
     "package:safari": "bash scripts/package-safari.sh",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "zip:safari": "wxt zip -b safari",
+    "zip:all": "wxt zip && wxt zip -b firefox && wxt zip -b safari",
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "audition": "node scripts/audition.mjs",
