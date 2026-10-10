@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Read Aloud: Settings &amp; Voice Lab</title>
+    <title>Read Aloud Settings</title>
     <meta name="manifest.open_in_tab" content="true" />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
     <main>
-      <h1>Read Aloud: Settings &amp; Voice Lab <small>(Phase 0 spike)</small></h1>
+      <h1>Read Aloud Settings</h1>
 
       <section>
         <h2>Sarvam</h2>
@@ -25,15 +25,50 @@
             </select>
           </label>
           <label>Voice <select id="voice"></select></label>
+          <label>Speed (Sarvam pace)
+            <select id="pace"></select>
+          </label>
           <label>Transport
             <select id="transport">
-              <option value="stream">stream (HTTP stream)</option>
-              <option value="rest">rest</option>
+              <option value="stream">HTTP stream</option>
+              <option value="rest">REST</option>
             </select>
           </label>
-          <label>Pace <input id="pace" type="number" min="0.5" max="2" step="0.05" /></label>
         </div>
         <p id="saved" class="hint" aria-live="polite"></p>
+      </section>
+
+      <section>
+        <h2>Reading</h2>
+        <div class="grid">
+          <label>Pause between sentences (ms)
+            <input id="sentencePauseMs" type="number" min="0" max="2000" step="50" />
+          </label>
+          <label>Pause between paragraphs (ms)
+            <input id="paragraphPauseMs" type="number" min="0" max="3000" step="50" />
+          </label>
+          <label>Sentences prepared ahead
+            <input id="prefetch" type="number" min="0" max="5" step="1" />
+          </label>
+        </div>
+        <label class="check"><input id="autoscroll" type="checkbox" /> Scroll to follow the sentence being read</label>
+        <label class="check"><input id="skipCode" type="checkbox" /> Skip code blocks</label>
+        <label class="check"><input id="skipTables" type="checkbox" /> Skip tables</label>
+        <p class="hint">Shortcuts: Alt+Shift+R read / play-pause · Alt+Shift+. next sentence · Alt+Shift+, previous sentence.
+          Alt+click any sentence on the page to read from there. Change shortcuts in your browser's extension shortcut settings.</p>
+      </section>
+
+      <section>
+        <h2>Usage &amp; cache</h2>
+        <div class="stats" id="usage"></div>
+        <p class="hint">Estimated at ₹30 per 10,000 characters (Bulbul v3 list price). Cached sentences are not billed again.</p>
+        <div class="row">
+          <label>Cache limit (MB) <input id="cacheLimitMb" type="number" min="20" max="2000" step="10" /></label>
+        </div>
+        <div class="row">
+          <span id="cacheStats" class="hint"></span>
+          <button id="clearCache">Clear cached audio</button>
+        </div>
       </section>
 
       <section>

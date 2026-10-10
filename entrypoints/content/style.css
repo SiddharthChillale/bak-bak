@@ -1,0 +1,22 @@
+/* Injected via the manifest, so page CSPs can't block it. Applies to the page itself;
+   the player bar styles live in its shadow root. */
+
+::highlight(readaloud-current) {
+  background-color: rgba(255, 190, 40, 0.45);
+  color: inherit;
+}
+
+[data-readaloud-current] {
+  background-color: rgba(255, 190, 40, 0.22) !important;
+  border-radius: 3px;
+}
+
+html[data-readaloud-jump] [data-readaloud-block] {
+  cursor: pointer;
+}
+
+html[data-readaloud-jump] [data-readaloud-block]:hover {
+  outline: 2px dashed rgba(180, 83, 42, 0.55);
+  outline-offset: 3px;
+  border-radius: 3px;
+}

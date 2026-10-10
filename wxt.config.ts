@@ -7,13 +7,21 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: 'Read Aloud (Sarvam)',
     description: 'Read web articles aloud with natural Indian-English voices from Sarvam AI.',
-    action: { default_title: 'Read Aloud: toggle spike panel' },
+    action: { default_title: 'Read Aloud' },
     permissions: ['storage', 'contextMenus'],
     host_permissions: ['https://api.sarvam.ai/*'],
     commands: {
-      'spike-speak': {
+      'toggle-reading': {
         suggested_key: { default: 'Alt+Shift+R' },
-        description: 'Speak the current selection (spike: autoplay test)',
+        description: 'Read this page aloud, or play/pause',
+      },
+      'next-sentence': {
+        suggested_key: { default: 'Alt+Shift+Period' },
+        description: 'Next sentence',
+      },
+      'prev-sentence': {
+        suggested_key: { default: 'Alt+Shift+Comma' },
+        description: 'Previous sentence',
       },
     },
     ...(browser === 'firefox' && {

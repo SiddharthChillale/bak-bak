@@ -13,12 +13,18 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "test": "vitest run",
     "audition": "node scripts/audition.mjs",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "happy-dom": "^20.14.6",
     "typescript": "~5.9.3",
+    "vitest": "^5.0.3",
     "wxt": "0.21.4"
+  },
+  "dependencies": {
+    "@mozilla/readability": "0.6.0"
   }
 }

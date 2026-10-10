@@ -50,3 +50,10 @@ export const DEFAULT_VOICE: Record<SarvamModel, string> = {
   'bulbul:v4-flash': 'shubh_en_narration',
   'bulbul:v3': 'shubh',
 };
+
+/** shubh_en_narration → "Shubh · narration" */
+export function prettyVoice(id: string): string {
+  const [name = id, , ...style] = id.split('_');
+  const cap = name.charAt(0).toUpperCase() + name.slice(1);
+  return style.length ? `${cap} · ${style.join(' ')}` : cap;
+}

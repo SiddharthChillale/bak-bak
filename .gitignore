@@ -7,3 +7,4 @@ auditions/
 .env.*
 !.env.example
 .DS_Store
+.claude/launch.json

@@ -1,21 +1,40 @@
+import { cacheClear, cacheStats, evict } from '@/lib/cache';
 import { synthesize, type SarvamModel, type SynthResult, type Transport } from '@/lib/sarvam';
-import { apiKeyItem, modelItem, paceItem, transportItem, voiceItem } from '@/lib/settings';
-import { DEFAULT_VOICE, READING_SHORTLIST, voicesFor } from '@/lib/voices';
+import {
+  SPEED_STEPS,
+  apiKeyItem,
+  cacheLimitMbItem,
+  getPrefs,
+  modelItem,
+  paceItem,
+  prefsItem,
+  transportItem,
+  voiceItem,
+  type ReadingPrefs,
+} from '@/lib/settings';
+import { INR_PER_CHAR, formatInr, monthKey, recordUsage, usageItem } from '@/lib/usage';
+import { DEFAULT_VOICE, READING_SHORTLIST, prettyVoice, voicesFor } from '@/lib/voices';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const apiKey = $<HTMLInputElement>('apiKey');
 const model = $<HTMLSelectElement>('model');
 const voice = $<HTMLSelectElement>('voice');
 const transport = $<HTMLSelectElement>('transport');
-const pace = $<HTMLInputElement>('pace');
+const pace = $<HTMLSelectElement>('pace');
 const sample = $<HTMLTextAreaElement>('sample');
 const results = $<HTMLTableSectionElement>('results');
 const saved = $<HTMLElement>('saved');
 const cost = $<HTMLElement>('cost');
+const cacheLimit = $<HTMLInputElement>('cacheLimitMb');
 const buttons = ['play', 'audition', 'latency'].map((id) => $<HTMLButtonElement>(id));
-
-// ₹30 per 10k characters (Bulbul v3 list price; v4-flash price not published as of 2026-10-10).
-const INR_PER_CHAR = 30 / 10_000;
+const prefInputs = {
+  sentencePauseMs: $<HTMLInputElement>('sentencePauseMs'),
+  paragraphPauseMs: $<HTMLInputElement>('paragraphPauseMs'),
+  prefetch: $<HTMLInputElement>('prefetch'),
+  autoscroll: $<HTMLInputElement>('autoscroll'),
+  skipCode: $<HTMLInputElement>('skipCode'),
+  skipTables: $<HTMLInputElement>('skipTables'),
+};
 
 let current: HTMLAudioElement | null = null;
 let cancelled = false;
@@ -26,7 +45,7 @@ function fillVoices(m: SarvamModel, selected?: string) {
   voice.replaceChildren(
     ...[...list]
       .sort((a, b) => Number(shortlist.has(b)) - Number(shortlist.has(a)) || a.localeCompare(b))
-      .map((v) => new Option(shortlist.has(v) ? `★ ${v}` : v, v)),
+      .map((v) => new Option(`${shortlist.has(v) ? '★ ' : ''}${prettyVoice(v)}`, v)),
   );
   voice.value = selected && list.includes(selected) ? selected : DEFAULT_VOICE[m];
 }
@@ -44,17 +63,40 @@ async function load() {
   model.value = await modelItem.getValue();
   fillVoices(model.value as SarvamModel, await voiceItem.getValue());
   transport.value = await transportItem.getValue();
+  pace.replaceChildren(...SPEED_STEPS.map((p) => new Option(`${p}×`, String(p))));
   pace.value = String(await paceItem.getValue());
+  const prefs = await getPrefs();
+  prefInputs.sentencePauseMs.value = String(prefs.sentencePauseMs);
+  prefInputs.paragraphPauseMs.value = String(prefs.paragraphPauseMs);
+  prefInputs.prefetch.value = String(prefs.prefetch);
+  prefInputs.autoscroll.checked = prefs.autoscroll;
+  prefInputs.skipCode.checked = prefs.skipCode;
+  prefInputs.skipTables.checked = prefs.skipTables;
+  cacheLimit.value = String(await cacheLimitMbItem.getValue());
   updateCost();
+  void refreshStats();
 }
 
+const num = (el: HTMLInputElement, lo: number, hi: number, fallback: number) =>
+  Math.min(hi, Math.max(lo, Number.isFinite(el.valueAsNumber) ? el.valueAsNumber : fallback));
+
 async function save() {
+  const prefs: ReadingPrefs = {
+    sentencePauseMs: num(prefInputs.sentencePauseMs, 0, 2000, 150),
+    paragraphPauseMs: num(prefInputs.paragraphPauseMs, 0, 3000, 450),
+    prefetch: Math.round(num(prefInputs.prefetch, 0, 5, 2)),
+    autoscroll: prefInputs.autoscroll.checked,
+    skipCode: prefInputs.skipCode.checked,
+    skipTables: prefInputs.skipTables.checked,
+  };
   await Promise.all([
     apiKeyItem.setValue(apiKey.value.trim()),
     modelItem.setValue(model.value as SarvamModel),
     voiceItem.setValue(voice.value),
     transportItem.setValue(transport.value as Transport),
-    paceItem.setValue(Math.min(2, Math.max(0.5, Number(pace.value) || 1))),
+    paceItem.setValue(Number(pace.value) || 1),
+    prefsItem.setValue(prefs),
+    cacheLimitMbItem.setValue(num(cacheLimit, 20, 2000, 200)),
   ]);
   saved.textContent = `Saved ${new Date().toLocaleTimeString()}`;
 }
@@ -63,8 +105,41 @@ model.addEventListener('change', () => {
   fillVoices(model.value as SarvamModel);
   updateCost();
 });
-for (const el of [apiKey, model, voice, transport, pace]) el.addEventListener('change', save);
+for (const el of [apiKey, model, voice, transport, pace, cacheLimit, ...Object.values(prefInputs)]) {
+  el.addEventListener('change', save);
+}
 sample.addEventListener('input', updateCost);
+// Keep in sync when the player bar changes voice/speed.
+voiceItem.watch((v) => (voice.value = v));
+paceItem.watch((p) => (pace.value = String(p)));
+
+async function refreshStats() {
+  const usage = (await usageItem.getValue())[monthKey()] ?? { billedChars: 0, requests: 0, cachedChars: 0 };
+  const stats = await cacheStats().catch(() => ({ entries: 0, bytes: 0 }));
+  const statEl = (value: string, label: string) => {
+    const div = document.createElement('div');
+    div.className = 'stat';
+    div.append(Object.assign(document.createElement('b'), { textContent: value }), Object.assign(document.createElement('span'), { textContent: label }));
+    return div;
+  };
+  $('usage').replaceChildren(
+    statEl(formatInr(usage.billedChars), 'estimated spend this month'),
+    statEl(usage.billedChars.toLocaleString(), 'characters billed this month'),
+    statEl(usage.requests.toLocaleString(), 'Sarvam requests this month'),
+    statEl(usage.cachedChars.toLocaleString(), 'characters served from cache'),
+  );
+  $('cacheStats').textContent = `${stats.entries.toLocaleString()} sentences cached · ${(stats.bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+usageItem.watch(() => void refreshStats());
+$('clearCache').addEventListener('click', async () => {
+  await cacheClear();
+  void refreshStats();
+});
+cacheLimit.addEventListener('change', async () => {
+  await evict(num(cacheLimit, 20, 2000, 200) * 1024 * 1024);
+  void refreshStats();
+});
 
 async function run(voiceId: string, t: Transport): Promise<{ row: HTMLTableRowElement; result?: SynthResult }> {
   const row = results.insertRow(0);
@@ -77,6 +152,7 @@ async function run(voiceId: string, t: Transport): Promise<{ row: HTMLTableRowEl
       transport: t,
       pace: Number(pace.value) || 1,
     });
+    void recordUsage(sample.value.trim().length, false);
     const { headersMs, firstByteMs, totalMs, bytes } = result.timings;
     row.innerHTML =
       `<td>${voiceId}</td><td>${t}</td><td>${Math.round(headersMs)} ms</td>` +
