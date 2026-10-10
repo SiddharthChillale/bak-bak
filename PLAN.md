@@ -1,6 +1,6 @@
 # Web Read-Aloud Extension — Plan (v2)
 
-Status: Phases 1–3 implemented (Safari packaging script untested: no Xcode on the dev machine; podcast mode uses Sarvam only, Gemini comparison not done) · Phase 0 notes in docs/phase0-spike.md · revised 2026-10-10
+Status: Phases 1–3 implemented; Phase 4 prep done (icons, privacy policy, AMO keys, listing notes in docs/store-listing.md), publishing decisions open. Safari packaging script untested (no Xcode on the dev machine); podcast mode uses Sarvam only (Gemini comparison not done). Phase 0 notes in docs/phase0-spike.md · revised 2026-10-10
 
 ## 1. Scope
 

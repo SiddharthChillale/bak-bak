@@ -26,7 +26,13 @@ export default defineConfig({
     },
     ...(browser === 'firefox' && {
       browser_specific_settings: {
-        gecko: { id: 'readaloud-sarvam@local', strict_min_version: '128.0' },
+        gecko: {
+          id: 'readaloud-sarvam@local',
+          // 140 ESR: data_collection_permissions consent UI and the CSS Highlight API.
+          strict_min_version: '140.0',
+          // Article text is sent to Sarvam AI for speech synthesis (required for AMO since Nov 2025).
+          data_collection_permissions: { required: ['websiteContent'] },
+        },
       },
     }),
   }),
