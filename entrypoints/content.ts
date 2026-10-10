@@ -1,14 +1,13 @@
 // Phase 0 spike player. Verifies, per browser and per site:
 //  - background → content-script audio delivery (base64 over a Port)
-//  - playback via <audio> + blob URL vs Web Audio (page CSP can block blob: media)
+//  - playback via Web Audio, which works under strict page CSPs (an <audio> element with a
+//    blob: URL is blocked by `media-src` on e.g. aws.amazon.com and github.com)
 //  - autoplay when started from an in-page click vs. context menu / keyboard command
 //  - REST vs streaming latency
 
 import { browser } from '#imports';
 import { base64ToBytes, type Transport } from '@/lib/sarvam';
 import { TTS_PORT, type SpeakCommand, type TtsPortRequest, type TtsPortResponse } from '@/lib/messages';
-
-type PlayMethod = 'element' | 'webaudio';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -22,7 +21,7 @@ export default defineContentScript({
       if (msg.type === 'speak') {
         const panel = getUi();
         panel.show();
-        void panel.speak({ text: msg.text, method: 'element', trigger: msg.trigger });
+        void panel.speak({ text: msg.text, trigger: msg.trigger });
       }
     });
   },
@@ -36,7 +35,6 @@ class SpikePanel {
   private port: Browser.runtime.Port | null = null;
   private nextId = 1;
   private pending = new Map<number, (r: TtsPortResponse) => void>();
-  private audioEl: HTMLAudioElement | null = null;
   private audioCtx: AudioContext | null = null;
   private source: AudioBufferSourceNode | null = null;
 
@@ -71,8 +69,7 @@ class SpikePanel {
           </select>
         </div>
         <div class="row">
-          <button data-act="element">▶ Speak (&lt;audio&gt;)</button>
-          <button data-act="webaudio">▶ Speak (Web Audio)</button>
+          <button data-act="speak">▶ Speak</button>
           <button data-act="stop">■ Stop</button>
           <button data-act="clear">Clear log</button>
         </div>
@@ -85,10 +82,10 @@ class SpikePanel {
       if (act === 'close') this.hide();
       if (act === 'stop') this.stop();
       if (act === 'clear') this.log.textContent = '';
-      if (act === 'element' || act === 'webaudio') {
+      if (act === 'speak') {
         // Unlock Web Audio synchronously inside the click so the gesture counts.
-        if (act === 'webaudio') this.ensureAudioCtx();
-        void this.speak({ method: act, trigger: 'in-page click' });
+        this.ensureAudioCtx();
+        void this.speak({ trigger: 'in-page click' });
       }
     });
     // Keep the current selection: clicking our buttons must not clear it first.
@@ -100,13 +97,13 @@ class SpikePanel {
   hide() { this.stop(); this.host.style.display = 'none'; }
   toggle() { this.host.style.display === 'none' ? this.show() : this.hide(); }
 
-  async speak(opts: { text?: string; method: PlayMethod; trigger: string }) {
+  async speak(opts: { text?: string; trigger: string }) {
     this.stop();
     const text = (opts.text ?? pickText()).trim();
     if (!text) return this.write('No text found on this page.');
     const transport = (this.transport.value || undefined) as Transport | undefined;
     const t0 = performance.now();
-    this.write(`\n▶ ${opts.trigger} · ${opts.method} · ${transport ?? 'saved'} · ${text.length} chars`);
+    this.write(`\n▶ ${opts.trigger} · ${transport ?? 'saved'} · ${text.length} chars`);
     this.write(`  "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"`);
 
     const res = await this.request(text, transport ? { transport } : undefined);
@@ -120,8 +117,7 @@ class SpikePanel {
     );
     const bytes = base64ToBytes(res.base64);
     try {
-      const duration =
-        opts.method === 'element' ? await this.playElement(bytes, res.mime) : await this.playWebAudio(bytes);
+      const duration = await this.play(bytes);
       this.write(`✓ playing ${duration.toFixed(1)}s of audio; click→sound ${ms(performance.now() - t0)}`);
     } catch (e) {
       const err = e as Error;
@@ -151,30 +147,13 @@ class SpikePanel {
     });
   }
 
-  private playElement(bytes: Uint8Array, mime: string): Promise<number> {
-    const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
-    const audio = new Audio();
-    this.audioEl = audio;
-    audio.preservesPitch = true;
-    audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
-    return new Promise((resolve, reject) => {
-      audio.addEventListener(
-        'error',
-        () => reject(new Error(`media error code ${audio.error?.code} (CSP media-src may block blob:)`)),
-        { once: true },
-      );
-      audio.src = url;
-      audio.play().then(() => resolve(audio.duration), reject);
-    });
-  }
-
   private ensureAudioCtx(): AudioContext {
     this.audioCtx ??= new AudioContext();
     if (this.audioCtx.state === 'suspended') void this.audioCtx.resume();
     return this.audioCtx;
   }
 
-  private async playWebAudio(bytes: Uint8Array): Promise<number> {
+  private async play(bytes: Uint8Array): Promise<number> {
     const ctx = this.ensureAudioCtx();
     const buffer = await ctx.decodeAudioData(bytes.slice().buffer);
     if (ctx.state !== 'running') {
@@ -191,8 +170,6 @@ class SpikePanel {
   }
 
   private stop() {
-    this.audioEl?.pause();
-    this.audioEl = null;
     try {
       this.source?.stop();
     } catch {

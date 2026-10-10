@@ -67,7 +67,7 @@ content script, which works the same in Chrome, Firefox and Safari.
 ┌─────────────── Content script (per tab) ────────────────┐
 │ Readability detect/extract → Segmenter → Chunk planner  │
 │ PlaybackController (state machine, queue, seek)         │
-│ AudioPlayer (HTMLAudioElement + blob URLs, playbackRate)│
+│ AudioPlayer (Web Audio only; decodes Sarvam MP3 bytes)  │
 │ Highlighter (CSS Custom Highlight API, fallback spans)  │
 │ Floating player UI (Shadow DOM) + click-to-seek         │
 └───────────────▲─────────────────────────────────────────┘
@@ -97,8 +97,16 @@ process, the page's CSP can't block requests, and caching is shared across tabs.
 ### 3.2 Playback
 - States: `idle → buffering → playing ⇄ paused → ended`, plus `error`.
 - **Prefetch 2 chunks ahead** (cost-aware, configurable); `AbortController` cancels on seek or voice change.
-- **Speed**: use `audio.playbackRate` with `preservesPitch`. It is instant and costs nothing. Sarvam `pace` stays a
-  fixed setting (changing it would mean paying to re-synthesise).
+- **Output path: Web Audio only** (`decodeAudioData` + `AudioBufferSourceNode`) in the content script; no
+  `<audio>` element and no fallback. It only plays Sarvam's audio; there is no non-Sarvam voice.
+  Spike finding (2026-10-10): `<audio>` with a `blob:` URL is blocked by strict page CSPs (media error code 4) on
+  aws.amazon.com (CSP in a `<meta>` tag) and github.com (CSP header), while Web Audio decodes and plays the same bytes
+  on those pages because no media URL is loaded. Web Audio also gives sample-accurate scheduling, so chunks play back-to-back
+  without gaps and highlight timing is exact. Create/resume the `AudioContext` inside the user's click.
+- **Speed**: buffer `playbackRate` would shift pitch, so speed uses Sarvam `pace` (natural, model-side). A speed
+  change applies from the next chunk not yet synthesised (cache key includes pace). If instant speed change turns
+  out to matter, add an offline JS time-stretch (WSOLA) on the decoded PCM; no AudioWorklet, since loading a worklet
+  module is subject to page `script-src`.
 - Highlight the current chunk; estimate the sentence within the chunk by character-proportional timing.
 - Autoplay: playback starts from a click in our in-page player, so the click counts as page user activation.
   Context-menu or keyboard starts rely on sticky activation; verify in the spike.
@@ -161,4 +169,5 @@ and needs one key; **Gemini 3.8 Flash + Flash TTS** is the comparison (more conv
 | Autoplay blocked when started from menu/shortcut | Show "click to start" in player; verify in spike |
 | Safari temporary extension resets on quit | Use packager + local signed build for daily use |
 | No word timestamps | Sentence-level highlight via proportional timing |
+| Page CSP blocks `blob:` media (confirmed on aws.amazon.com, github.com) | Web Audio playback only (no media URL) |
 | Sarvam model/voice IDs change (v4 is new) | Fetch voice list at runtime; IDs in config, not code |

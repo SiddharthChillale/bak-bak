@@ -4,8 +4,8 @@ The spike answers four questions before the real player gets built:
 
 1. **Voice**: which Indian-English voice(s) sound best for long-form reading (v4-flash vs v3)?
 2. **Latency**: REST vs HTTP-stream: time to first byte and total, for a ~230-char passage.
-3. **Playback path**: does `<audio>` + blob URL work in the page on every site, or do strict page CSPs
-   (`media-src`) force the Web Audio fallback?
+3. **Playback path**: ~~does `<audio>` + blob URL work on every site?~~ Answered: no. Strict page CSPs block it, so
+   playback is Web Audio only.
 4. **Autoplay**: does audio start when triggered from the context menu or `Alt+Shift+R` (no click in the page)?
 
 ## Setup
@@ -33,9 +33,9 @@ Then open the extension's **options page** (Voice Lab), paste the Sarvam API key
 |---|---|---|
 | A | Voice Lab | *Audition reading shortlist* (≈ ₹8 for v4-flash). Note your top 2–3. Switch model to v3 and repeat (≈ ₹5). |
 | B | Voice Lab | *Latency test* (6 calls, ≈ ₹4). Note median first byte / total for REST vs stream. |
-| C | Any article page | Click the toolbar icon → spike panel. Select a paragraph → *Speak (&lt;audio&gt;)*, then *Speak (Web Audio)*. |
+| C | Any article page | Click the toolbar icon → spike panel. Select a paragraph → *Speak*. |
 | D | Same page | Reload, **don't click the page**, select text by keyboard or use the context menu *Read selection aloud (spike)*. Note if it plays or reports *autoplay blocked*. Repeat with `Alt+Shift+R`. |
-| E | Strict-CSP sites | Repeat C on github.com (a README), x.com or mail.google.com, and a news site. Note any *media error*. |
+| E | Strict-CSP sites | Repeat C on the AWS blog post, github.com (a README) and x.com. Should play everywhere. |
 
 CLI alternative for A/B (no browser):
 
@@ -48,14 +48,16 @@ SARVAM_API_KEY=… pnpm audition --model bulbul:v3
 
 | Test | Chrome | Firefox | Safari |
 |---|---|---|---|
-| C: `<audio>` blob plays | | | |
-| C: Web Audio plays | | | |
+| C: plays | | | |
 | D: context menu autoplay | | | |
 | D: keyboard command autoplay | | | |
-| E: github.com `<audio>` | | | |
-| E: other strict-CSP site | | | |
+| E: aws.amazon.com blog | | | |
+| E: github.com | | | |
 
 - Preferred voices:
 - REST median first byte / total:
 - Stream median first byte / total:
 - Notes:
+  - 2026-10-10: `<audio>` + blob failed with media error code 4 on aws.amazon.com (`media-src` in a CSP `<meta>` tag;
+    Chrome logs `media-src blocked blob`) and github.com. Web Audio plays the same bytes on both, so the spike now
+    uses Web Audio only.
