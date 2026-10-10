@@ -1,0 +1,144 @@
+// Podcast mode: Sarvam-105B turns an article into a two-host conversation
+// script, which is then voiced turn by turn with two Bulbul voices.
+
+import { SARVAM_BASE_URL, SarvamError } from './sarvam';
+
+export type HostId = 'A' | 'B';
+
+export interface PodcastTurn {
+  speaker: HostId;
+  text: string;
+}
+
+export interface PodcastScript {
+  title: string;
+  turns: PodcastTurn[];
+}
+
+export type PodcastLength = 'short' | 'standard';
+
+export interface ScriptRequest {
+  title: string;
+  /** Article text, paragraphs separated by blank lines. */
+  text: string;
+  hosts: Record<HostId, string>;
+  length: PodcastLength;
+}
+
+export const LLM_MODEL = 'sarvam-105b';
+/** Article characters sent to the LLM (≈ 15k tokens; the model has a 128k context). */
+export const MAX_ARTICLE_CHARS = 60_000;
+const TARGET_WORDS: Record<PodcastLength, number> = { short: 700, standard: 1400 };
+/** Fits the Starter tier's 4,096 output-token cap with reasoning off. */
+const MAX_TOKENS = 4000;
+
+export function buildMessages(req: ScriptRequest) {
+  const { A, B } = req.hosts;
+  const words = TARGET_WORDS[req.length];
+  const system = [
+    'You write scripts for a two-host explainer podcast, spoken in natural Indian English.',
+    `Hosts: ${A} (speaker "A", the lead host who has read the article closely) and ${B} (speaker "B", a curious co-host who asks sharp, practical questions and reacts naturally).`,
+    'Rules:',
+    '- Use only facts from the article. Do not invent numbers, names, quotes or claims.',
+    '- Warm, conversational and clear. Short turns of 1 to 4 sentences; the hosts address each other by name now and then.',
+    '- Explain jargon and expand abbreviations the first time they appear.',
+    '- Open with a one-line hook and the article title; end with a short recap of the key takeaways.',
+    '- Plain spoken text only: no stage directions, sound effects, markdown, lists, URLs or emojis.',
+    `- Length: about ${words} words in total.`,
+    'Output ONLY a JSON object, with no text before or after it:',
+    '{"title": string, "turns": [{"speaker": "A" | "B", "text": string}]}',
+  ].join('\n');
+  const article = req.text.length > MAX_ARTICLE_CHARS ? `${req.text.slice(0, MAX_ARTICLE_CHARS)}\n[…truncated]` : req.text;
+  const user = `Article title: ${req.title}\n\nArticle:\n${article}`;
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
+}
+
+export async function generateScript(apiKey: string, req: ScriptRequest, signal?: AbortSignal): Promise<PodcastScript> {
+  const res = await fetch(`${SARVAM_BASE_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'api-subscription-key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: LLM_MODEL,
+      messages: buildMessages(req),
+      temperature: 0.7,
+      max_tokens: MAX_TOKENS,
+      // Reasoning tokens count against max_tokens; the script needs the room.
+      reasoning_effort: null,
+    }),
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const msg =
+      res.status === 401 || res.status === 403
+        ? 'Sarvam rejected the API key.'
+        : res.status === 429
+          ? 'Sarvam rate limit hit; try again shortly.'
+          : `Sarvam error ${res.status} while writing the podcast script.`;
+    throw new SarvamError(msg, res.status, body);
+  }
+  const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
+  const content = json.choices?.[0]?.message?.content ?? '';
+  return parseScript(content, req.hosts);
+}
+
+/**
+ * Parse the model output into a script. Tolerates code fences, prose around the
+ * JSON, host names instead of A/B, and a truncated tail (keeps complete turns).
+ */
+export function parseScript(content: string, hosts?: Record<HostId, string>): PodcastScript {
+  const toSpeaker = (s: unknown): HostId | null => {
+    const v = String(s ?? '').trim();
+    if (v === 'A' || v === 'B') return v;
+    if (hosts) {
+      if (v.toLowerCase() === hosts.A.toLowerCase()) return 'A';
+      if (v.toLowerCase() === hosts.B.toLowerCase()) return 'B';
+    }
+    return null;
+  };
+  const clean = (turns: unknown[]): PodcastTurn[] =>
+    turns.flatMap((t) => {
+      const turn = t as { speaker?: unknown; text?: unknown };
+      const speaker = toSpeaker(turn.speaker);
+      const text = typeof turn.text === 'string' ? turn.text.replace(/\s+/g, ' ').trim() : '';
+      return speaker && text ? [{ speaker, text }] : [];
+    });
+
+  const start = content.indexOf('{');
+  const end = content.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try {
+      const obj = JSON.parse(content.slice(start, end + 1)) as { title?: unknown; turns?: unknown };
+      if (Array.isArray(obj.turns)) {
+        const turns = clean(obj.turns);
+        if (turns.length) return { title: typeof obj.title === 'string' ? obj.title : '', turns };
+      }
+    } catch {
+      // Fall through to the lenient scan (e.g. output cut off mid-JSON).
+    }
+  }
+
+  const turns: PodcastTurn[] = [];
+  const re = /"speaker"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*("(?:[^"\\]|\\.)*")/g;
+  for (const m of content.matchAll(re)) {
+    const speaker = toSpeaker(m[1]);
+    let text = '';
+    try {
+      text = JSON.parse(m[2]!) as string;
+    } catch {
+      continue;
+    }
+    if (speaker && text.trim()) turns.push({ speaker, text: text.replace(/\s+/g, ' ').trim() });
+  }
+  if (!turns.length) throw new Error("Couldn't read the podcast script the model returned. Try again.");
+  const title = /"title"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(content)?.[1];
+  return { title: title ? (JSON.parse(title) as string) : '', turns };
+}
+
+/** Rough cost of voicing a script (Bulbul, per character). */
+export function scriptChars(script: PodcastScript): number {
+  return script.turns.reduce((n, t) => n + t.text.length, 0);
+}

@@ -1,13 +1,15 @@
-import { browser, type Browser } from '#imports';
+import { browser, storage, type Browser } from '#imports';
 import { cacheGet, cacheKey, cachePut } from '@/lib/cache';
 import type { PlayerCommand, ToBackground, ToContent, TtsPortRequest, TtsPortResponse, VoiceSettings } from '@/lib/messages';
 import { TTS_PORT } from '@/lib/messages';
+import { generateScript, type PodcastScript, type ScriptRequest } from '@/lib/podcast';
 import { SarvamError, bytesToBase64, synthesize } from '@/lib/sarvam';
 import { apiKeyItem, cacheLimitMbItem, transportItem } from '@/lib/settings';
 import { recordUsage } from '@/lib/usage';
 
 const MENU_READ_PAGE = 'read-page';
 const MENU_READ_FROM_HERE = 'read-from-selection';
+const MENU_PODCAST = 'podcast';
 const LANG = 'en-IN';
 /** Concurrent Sarvam requests across all tabs. */
 const MAX_INFLIGHT = 2;
@@ -17,6 +19,7 @@ export default defineBackground(() => {
     browser.contextMenus.removeAll().then(() => {
       browser.contextMenus.create({ id: MENU_READ_PAGE, title: 'Read this page aloud', contexts: ['page'] });
       browser.contextMenus.create({ id: MENU_READ_FROM_HERE, title: 'Read aloud from here', contexts: ['selection'] });
+      browser.contextMenus.create({ id: MENU_PODCAST, title: 'Turn this page into a podcast', contexts: ['page'] });
     });
   });
 
@@ -25,6 +28,7 @@ export default defineBackground(() => {
   browser.contextMenus.onClicked.addListener((info, tab) => {
     if (info.menuItemId === MENU_READ_PAGE) sendCommand(tab?.id, 'read-page');
     if (info.menuItemId === MENU_READ_FROM_HERE) sendCommand(tab?.id, 'read-from-selection');
+    if (info.menuItemId === MENU_PODCAST) sendCommand(tab?.id, 'podcast');
   });
 
   browser.commands.onCommand.addListener(async (command, tab) => {
@@ -99,6 +103,7 @@ function handleTtsPort(port: Browser.runtime.Port) {
       return;
     }
     if (msg.type === 'synthesize' && open) void serve({ port, id: msg.id, text: msg.text, voice: msg.voice });
+    if (msg.type === 'script' && open) void writeScript(port, msg.id, msg.request, msg.cacheKey);
   });
 }
 
@@ -163,6 +168,38 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
       if (!retryable || i >= attempts - 1) throw e;
       await new Promise((r) => setTimeout(r, 800 * 2 ** i));
     }
+  }
+}
+
+// ---- Podcast scripts --------------------------------------------------------
+
+const MAX_SCRIPTS = 30;
+const scriptsItem = storage.defineItem<Record<string, { script: PodcastScript; at: number }>>('local:podcastScripts', {
+  fallback: {},
+});
+
+async function writeScript(port: Browser.runtime.Port, id: number, request: ScriptRequest, key: string) {
+  try {
+    const cached = (await scriptsItem.getValue())[key];
+    if (cached) {
+      reply(port, { type: 'script', id, script: cached.script, cached: true });
+      return;
+    }
+    const apiKey = await apiKeyItem.getValue();
+    if (!apiKey) throw new SarvamError('Add your Sarvam API key in the extension settings.', 401);
+    const script = await withRetry(() => generateScript(apiKey, request), 2);
+    reply(port, { type: 'script', id, script, cached: false });
+    const all = { ...(await scriptsItem.getValue()), [key]: { script, at: Date.now() } };
+    const keys = Object.keys(all).sort((a, b) => all[b]!.at - all[a]!.at);
+    for (const k of keys.slice(MAX_SCRIPTS)) delete all[k];
+    await scriptsItem.setValue(all);
+  } catch (e) {
+    reply(port, {
+      type: 'error',
+      id,
+      message: e instanceof Error ? e.message : String(e),
+      status: e instanceof SarvamError ? e.status : undefined,
+    });
   }
 }
 

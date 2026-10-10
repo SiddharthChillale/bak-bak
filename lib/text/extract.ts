@@ -28,7 +28,7 @@ export interface Chunk {
 }
 
 export interface ArticleDoc {
-  kind: 'article' | 'selection';
+  kind: 'article' | 'selection' | 'podcast';
   title: string;
   blocks: Block[];
   chunks: Chunk[];
@@ -130,6 +130,25 @@ export function docFromSelection(sel: Selection): ArticleDoc | null {
     blocks.push({ el: null, map: null, start: 0, end: text.length, text, heading: false });
   }
   return buildDoc('selection', 'Selection', blocks);
+}
+
+/** A document from plain texts (not in the page), e.g. podcast turns: one block per text. */
+export function docFromTexts(kind: ArticleDoc['kind'], title: string, texts: string[]): ArticleDoc {
+  const blocks = texts.map((t) => {
+    const text = normalize(t);
+    return { el: null, map: null, start: 0, end: text.length, text, heading: false };
+  });
+  return buildDoc(kind, title, blocks);
+}
+
+/** Article text for the podcast writer: blocks as paragraphs, headings marked. */
+export function articleText(doc: ArticleDoc): string {
+  return doc.blocks
+    .map((b) => {
+      const text = (b.map ? b.map.text : b.text).slice(b.start, b.end);
+      return b.heading ? `## ${text}` : text;
+    })
+    .join('\n\n');
 }
 
 /** Chunk index for a position in the live page, or -1 if it's outside the doc. */

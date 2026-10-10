@@ -5,13 +5,23 @@ import { TTS_PORT } from '@/lib/messages';
 import { WebAudioOut } from '@/lib/player/audio';
 import { PlaybackController } from '@/lib/player/controller';
 import { Highlighter } from '@/lib/player/highlight';
-import { PlayerBar, type Notice } from '@/lib/player/ui';
+import { PlayerBar, type Notice, type TranscriptItem } from '@/lib/player/ui';
+import type { PodcastScript, ScriptRequest } from '@/lib/podcast';
 import { clearResume, getResume, pageKey, saveResume } from '@/lib/resume';
 import { base64ToBytes } from '@/lib/sarvam';
-import { SPEED_STEPS, getPrefs, modelItem, paceItem, prefsItem, voiceItem, type ReadingPrefs } from '@/lib/settings';
-import { type ArticleDoc, chunkRange, docFromSelection, extractArticle, isReaderable, locate } from '@/lib/text/extract';
+import { SPEED_STEPS, getPodcastPrefs, getPrefs, modelItem, paceItem, prefsItem, voiceItem, type ReadingPrefs } from '@/lib/settings';
+import {
+  type ArticleDoc,
+  articleText,
+  chunkRange,
+  docFromSelection,
+  docFromTexts,
+  extractArticle,
+  isReaderable,
+  locate,
+} from '@/lib/text/extract';
 import { formatInr } from '@/lib/usage';
-import { READING_SHORTLIST } from '@/lib/voices';
+import { READING_SHORTLIST, prettyVoice } from '@/lib/voices';
 
 /** Rough speaking rate used for time estimates at pace 1 (chars/second). */
 const CHARS_PER_SEC = 15;
@@ -49,7 +59,13 @@ class ReaderApp {
   private ui: PlayerBar | null = null;
   private port: Browser.runtime.Port | null = null;
   private nextId = 1;
-  private pending = new Map<number, { index: number; resolve: (b: ArrayBuffer) => void; reject: (e: Error) => void }>();
+  /** In-flight port requests; index is the chunk for audio requests, -1 otherwise. */
+  private pending = new Map<number, { index: number; handle: (msg: TtsPortResponse) => void }>();
+  /** Per-chunk voice overrides (podcast hosts); null = use the reading voice. */
+  private chunkVoices: VoiceSettings[] | null = null;
+  private transcript: TranscriptItem[] | null = null;
+  /** A standalone message (no document to show yet, or a podcast being written). */
+  private message: { title: string; notice: Notice } | null = null;
   private voice: VoiceSettings = { model: 'bulbul:v4-flash', speaker: 'shubh_en_narration', pace: 1 };
   private prefs: ReadingPrefs | null = null;
   private jumpMode = false;
@@ -103,6 +119,8 @@ class ReaderApp {
         return this.startArticle(0);
       case 'read-from-selection':
         return this.readFromSelection();
+      case 'podcast':
+        return this.startPodcast();
       case 'next':
         return this.controller.next();
       case 'prev':
@@ -114,6 +132,7 @@ class ReaderApp {
 
   reset() {
     this.notice = null;
+    this.message = null;
     this.controller.stop();
     this.controller.load([]);
     this.doc = null;
@@ -134,19 +153,27 @@ class ReaderApp {
 
   // ---- loading -------------------------------------------------------------
 
-  private loadArticle(): boolean {
+  private extract(): ArticleDoc | null {
     const doc = extractArticle(document, {
       skipCode: this.prefs?.skipCode ?? true,
       skipTables: this.prefs?.skipTables ?? true,
       exclude: this.ui ? [this.ui.host] : [],
     });
-    if (!doc?.chunks.length) return false;
+    return doc?.chunks.length ? doc : null;
+  }
+
+  private loadArticle(): boolean {
+    const doc = this.extract();
+    if (!doc) return false;
     this.setDoc(doc);
     return true;
   }
 
-  private setDoc(doc: ArticleDoc) {
+  private setDoc(doc: ArticleDoc, extra?: { voices: VoiceSettings[]; transcript: TranscriptItem[] }) {
     this.doc = doc;
+    this.message = null;
+    this.chunkVoices = extra?.voices ?? null;
+    this.transcript = extra?.transcript ?? null;
     this.controller.load(doc.chunks.map((c) => ({ block: c.block, speech: c.speech })));
     if (this.jumpMode) this.markBlocks(true);
     this.ensureUi().show();
@@ -181,12 +208,19 @@ class ReaderApp {
       }
     }
 
+    this.confirmThenPlay(from, 'Long article');
+  }
+
+  /** Play from `from`, first asking when the rest of the doc is above the cost threshold. */
+  private confirmThenPlay(from: number, what: string) {
+    const doc = this.doc;
+    if (!doc) return;
     const remaining = doc.chunks.slice(from).reduce((n, c) => n + c.speech.length, 0);
     const limit = this.prefs?.confirmAboveChars ?? 0;
     if (limit > 0 && remaining > limit) {
       const minutes = Math.round(remaining / CHARS_PER_SEC / this.voice.pace / 60);
       this.notice = {
-        text: `Long article: ~${minutes} min of audio, about ${formatInr(remaining)} to synthesise (already-cached sentences are free).`,
+        text: `${what}: ~${minutes} min of audio, about ${formatInr(remaining)} to synthesise (already-cached sentences are free).`,
         tone: 'attn',
         actions: [
           { label: 'Read it', run: () => this.dismissNoticeAnd(() => this.controller.play(from)) },
@@ -223,6 +257,71 @@ class ReaderApp {
     this.saveTimer = setTimeout(() => void saveResume(key, index, total), 1000);
   }
 
+  private async startPodcast() {
+    // From the bar this runs inside a click: unlock audio now, since playback starts after the script arrives.
+    this.audio.unlock();
+    const article = this.doc?.kind === 'article' ? this.doc : this.extract();
+    if (!article) {
+      this.showMessage("Couldn't find an article on this page to turn into a podcast.");
+      return;
+    }
+    const podcast = await getPodcastPrefs();
+    const voices = podcast.hosts[this.voice.model];
+    const names = { A: hostName(voices.A), B: hostName(voices.B) };
+    if (names.A === names.B) names.B = `${names.B} Two`;
+    const text = articleText(article);
+    const request: ScriptRequest = { title: article.title, text, hosts: names, length: podcast.length };
+    const key = `${pageKey()}|${podcast.length}|${names.A}|${names.B}|${hashString(text)}`;
+
+    this.controller.stop();
+    this.showMessage(`Writing a ${podcast.length} podcast script with Sarvam-105B (${names.A} and ${names.B})… this takes about 20–60 seconds.`, {
+      title: `Podcast · ${article.title}`,
+    });
+
+    let script: PodcastScript;
+    try {
+      script = await this.requestScript(request, key);
+    } catch (e) {
+      this.showMessage(`Couldn't write the podcast: ${(e as Error).message}`, {
+        title: `Podcast · ${article.title}`,
+        tone: 'err',
+        actions: [{ label: 'Try again', run: () => void this.startPodcast() }],
+      });
+      return;
+    }
+
+    const doc = docFromTexts('podcast', script.title || article.title, script.turns.map((t) => t.text));
+    const turnVoice = (block: number) => ({ ...this.voice, speaker: voices[script.turns[block]!.speaker] });
+    const transcript: TranscriptItem[] = [];
+    for (const c of doc.chunks) {
+      if (transcript.at(-1)?.block === c.block) continue;
+      transcript.push({ block: c.block, start: c.index, label: names[script.turns[c.block]!.speaker], text: doc.blocks[c.block]!.text });
+    }
+    this.notice = null;
+    this.setDoc(doc, { voices: doc.chunks.map((c) => turnVoice(c.block)), transcript });
+    this.confirmThenPlay(0, 'Podcast ready');
+  }
+
+  private requestScript(request: ScriptRequest, cacheKey: string): Promise<PodcastScript> {
+    const port = this.connect();
+    const id = this.nextId++;
+    // Chrome may stop an idle service worker after ~30 s; port traffic keeps it alive.
+    const keepAlive = setInterval(() => {
+      try {
+        this.port?.postMessage({ type: 'ping' } satisfies TtsPortRequest);
+      } catch {
+        // port closed; the pending request is rejected on disconnect
+      }
+    }, 20_000);
+    return new Promise<PodcastScript>((resolve, reject) => {
+      this.pending.set(id, {
+        index: -1,
+        handle: (msg) => (msg.type === 'script' ? resolve(msg.script) : reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'))),
+      });
+      port.postMessage({ type: 'script', id, request, cacheKey } satisfies TtsPortRequest);
+    }).finally(() => clearInterval(keepAlive));
+  }
+
   private readFromSelection() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return this.startArticle(0);
@@ -242,9 +341,18 @@ class ReaderApp {
   private synth(index: number, speech: string): Promise<ArrayBuffer> {
     const port = this.connect();
     const id = this.nextId++;
+    const voice = this.chunkVoices?.[index] ?? this.voice;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { index, resolve, reject });
-      port.postMessage({ type: 'synthesize', id, text: speech, voice: { ...this.voice } } satisfies TtsPortRequest);
+      this.pending.set(id, {
+        index,
+        handle: (msg) => {
+          if (msg.type === 'audio') {
+            const bytes = base64ToBytes(msg.base64);
+            resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+          } else reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'));
+        },
+      });
+      port.postMessage({ type: 'synthesize', id, text: speech, voice: { ...voice } } satisfies TtsPortRequest);
     });
   }
 
@@ -262,14 +370,11 @@ class ReaderApp {
       const p = this.pending.get(msg.id);
       if (!p) return;
       this.pending.delete(msg.id);
-      if (msg.type === 'audio') {
-        const bytes = base64ToBytes(msg.base64);
-        p.resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-      } else p.reject(new Error(msg.message));
+      p.handle(msg);
     });
     port.onDisconnect.addListener(() => {
       this.port = null;
-      for (const p of this.pending.values()) p.reject(new Error('Lost connection to the extension. Reload the page.'));
+      for (const [id, p] of this.pending) p.handle({ type: 'error', id, message: 'Lost connection to the extension. Reload the page.' });
       this.pending.clear();
     });
     this.port = port;
@@ -344,29 +449,39 @@ class ReaderApp {
       prevBlock: () => this.controller.prevBlock(),
       nextBlock: () => this.controller.nextBlock(),
       seek: (i) => this.controller.seek(i),
+      seekAndPlay: (i) => this.controller.play(i),
       setPace: (p) => void paceItem.setValue(p),
       setVoice: (v) => void voiceItem.setValue(v),
       toggleJump: () => this.setJumpMode(!this.jumpMode),
       openSettings: () => send({ type: 'open-options' }),
+      podcast: () => void this.startPodcast(),
       close: () => this.reset(),
     });
     return this.ui;
   }
 
-  private showMessage(text: string) {
-    const ui = this.ensureUi();
-    ui.show();
-    ui.render({
-      ...this.viewBase(),
-      title: 'Read Aloud',
-      state: { status: 'idle', index: 0, total: 0, buffering: false },
-      summary: text,
-    });
+  private showMessage(text: string, opts: { title?: string; tone?: Notice['tone']; actions?: Notice['actions'] } = {}) {
+    this.message = {
+      title: opts.title ?? 'Read Aloud',
+      notice: { text, tone: opts.tone ?? 'info', actions: opts.actions ?? [] },
+    };
+    this.ensureUi().show();
+    this.render();
   }
 
   private render() {
-    if (!this.ui || !this.doc) return;
-    this.ui.render(this.viewBase());
+    if (!this.ui) return;
+    if (this.message) {
+      this.ui.render({
+        ...this.viewBase(),
+        title: this.message.title,
+        notice: this.message.notice,
+        state: { status: 'idle', index: 0, total: 0, buffering: false },
+        transcript: null,
+      });
+    } else if (this.doc) {
+      this.ui.render(this.viewBase());
+    }
   }
 
   private viewBase() {
@@ -388,14 +503,24 @@ class ReaderApp {
             ],
           }
         : null);
+    const podcast = doc?.kind === 'podcast';
+    const speakerOf = (i: number) => {
+      const block = doc?.chunks[i]?.block;
+      return this.transcript?.find((t) => t.block === block)?.label;
+    };
     return {
-      title: doc?.title || document.title || 'Read Aloud',
+      title: podcast ? `Podcast · ${doc!.title}` : doc?.title || document.title || 'Read Aloud',
       notice,
       state,
-      chunkText: (i: number) => doc?.chunks[i]?.display ?? '',
+      chunkText: (i: number) => {
+        const text = doc?.chunks[i]?.display ?? '';
+        const who = podcast ? speakerOf(i) : undefined;
+        return who ? `${who}: ${text}` : text;
+      },
       summary: doc
-        ? `${doc.chunks.length} sentences · ~${Math.max(1, Math.round(minutes))} min · ≈ ${formatInr(doc.speechChars)} to synthesise (cached sentences are free)`
+        ? `${podcast ? `${this.transcript?.length ?? 0} turns` : `${doc.chunks.length} sentences`} · ~${Math.max(1, Math.round(minutes))} min · ≈ ${formatInr(doc.speechChars)} to synthesise (cached sentences are free)`
         : '',
+      transcript: this.transcript,
       remainingMinutes: remainingChars / CHARS_PER_SEC / this.voice.pace / 60,
       pace: this.voice.pace,
       paces: SPEED_STEPS,
@@ -417,4 +542,19 @@ function caretFromPoint(x: number, y: number): { node: Node; offset: number } | 
   }
   const r = doc.caretRangeFromPoint?.(x, y);
   return r ? { node: r.startContainer, offset: r.startOffset } : null;
+}
+
+/** "simran_en_conversation" → "Simran" */
+function hostName(voiceId: string): string {
+  return prettyVoice(voiceId).split(' · ')[0] ?? voiceId;
+}
+
+/** FNV-1a; just a cache key (crypto.subtle is unavailable on http: pages). */
+function hashString(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16) + s.length.toString(16);
 }

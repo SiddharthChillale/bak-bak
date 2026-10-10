@@ -4,7 +4,9 @@ import {
   SPEED_STEPS,
   apiKeyItem,
   cacheLimitMbItem,
+  getPodcastPrefs,
   getPrefs,
+  podcastItem,
   modelItem,
   paceItem,
   prefsItem,
@@ -26,6 +28,9 @@ const results = $<HTMLTableSectionElement>('results');
 const saved = $<HTMLElement>('saved');
 const cost = $<HTMLElement>('cost');
 const cacheLimit = $<HTMLInputElement>('cacheLimitMb');
+const podcastLength = $<HTMLSelectElement>('podcastLength');
+const hostA = $<HTMLSelectElement>('hostA');
+const hostB = $<HTMLSelectElement>('hostB');
 const buttons = ['play', 'audition', 'latency'].map((id) => $<HTMLButtonElement>(id));
 const prefInputs = {
   sentencePauseMs: $<HTMLInputElement>('sentencePauseMs'),
@@ -60,6 +65,28 @@ function updateCost() {
     `audition ≈ ₹${(n * shortlist * INR_PER_CHAR).toFixed(2)} · latency test ≈ ₹${(n * 6 * INR_PER_CHAR).toFixed(2)}`;
 }
 
+async function fillHosts() {
+  const m = model.value as SarvamModel;
+  const prefs = await getPodcastPrefs();
+  for (const [sel, id] of [[hostA, prefs.hosts[m].A], [hostB, prefs.hosts[m].B]] as const) {
+    sel.replaceChildren(...voicesFor(m).map((v) => new Option(prettyVoice(v), v)));
+    sel.value = id;
+  }
+  podcastLength.value = prefs.length;
+}
+
+async function savePodcast() {
+  const prefs = await getPodcastPrefs();
+  const m = model.value as SarvamModel;
+  await podcastItem.setValue({
+    length: podcastLength.value === 'standard' ? 'standard' : 'short',
+    hosts: { ...prefs.hosts, [m]: { A: hostA.value, B: hostB.value } },
+  });
+  saved.textContent = hostA.value === hostB.value ? 'Pick two different voices for the hosts.' : `Saved ${new Date().toLocaleTimeString()}`;
+}
+
+for (const el of [podcastLength, hostA, hostB]) el.addEventListener('change', savePodcast);
+
 async function load() {
   apiKey.value = await apiKeyItem.getValue();
   model.value = await modelItem.getValue();
@@ -77,6 +104,7 @@ async function load() {
   prefInputs.skipCode.checked = prefs.skipCode;
   prefInputs.skipTables.checked = prefs.skipTables;
   cacheLimit.value = String(await cacheLimitMbItem.getValue());
+  await fillHosts();
   updateCost();
   void refreshStats();
 }
@@ -110,6 +138,7 @@ async function save() {
 model.addEventListener('change', () => {
   fillVoices(model.value as SarvamModel);
   updateCost();
+  void fillHosts();
 });
 for (const el of [apiKey, model, voice, transport, pace, cacheLimit, ...Object.values(prefInputs)]) {
   el.addEventListener('change', save);

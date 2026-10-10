@@ -9,8 +9,18 @@ export interface Notice {
   actions: { label: string; run: () => void }[];
 }
 
+export interface TranscriptItem {
+  block: number;
+  /** First chunk index of this item. */
+  start: number;
+  label: string;
+  text: string;
+}
+
 export interface PlayerView {
   title: string;
+  /** Podcast transcript; each item is clickable to jump there. */
+  transcript?: TranscriptItem[] | null;
   /** Overrides the "now reading" line, with optional action buttons. */
   notice?: Notice | null;
   state: PlayerState;
@@ -32,9 +42,12 @@ export interface PlayerHandlers {
   prevBlock(): void;
   nextBlock(): void;
   seek(index: number): void;
+  /** Jump and start playing (transcript clicks). */
+  seekAndPlay?(index: number): void;
   setPace(pace: number): void;
   setVoice(voice: string): void;
   toggleJump(): void;
+  podcast(): void;
   openSettings(): void;
   close(): void;
 }
@@ -48,6 +61,7 @@ const ICONS = {
   next: '<path d="M7 6.5v11a.8.8 0 0 0 1.25.66l7.25-5.06V17a1 1 0 0 0 2 0V7a1 1 0 0 0-2 0v3.9L8.25 5.84A.8.8 0 0 0 7 6.5Z"/>',
   prevBlock: '<path d="M12 6.5v11a.8.8 0 0 1-1.25.66L3.6 12.66a.8.8 0 0 1 0-1.32l7.15-5.5A.8.8 0 0 1 12 6.5Zm9 0v11a.8.8 0 0 1-1.25.66l-7.15-5.5a.8.8 0 0 1 0-1.32l7.15-5.5A.8.8 0 0 1 21 6.5Z"/>',
   nextBlock: '<path d="M12 6.5v11a.8.8 0 0 0 1.25.66l7.15-5.5a.8.8 0 0 0 0-1.32l-7.15-5.5A.8.8 0 0 0 12 6.5Zm-9 0v11a.8.8 0 0 0 1.25.66l7.15-5.5a.8.8 0 0 0 0-1.32L4.25 5.84A.8.8 0 0 0 3 6.5Z"/>',
+  podcast: '<path d="M12 2.5a3.5 3.5 0 0 1 3.5 3.5v6a3.5 3.5 0 1 1-7 0V6A3.5 3.5 0 0 1 12 2.5Zm-6 9a1 1 0 0 1 1 1 5 5 0 0 0 10 0 1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V21h2.5a1 1 0 1 1 0 2h-7a1 1 0 1 1 0-2H11v-1.57A7 7 0 0 1 5 12.5a1 1 0 0 1 1-1Z"/>',
   jump: '<path d="M12 3a1 1 0 0 1 1 1v1.07A7 7 0 0 1 18.93 11H20a1 1 0 1 1 0 2h-1.07A7 7 0 0 1 13 18.93V20a1 1 0 1 1-2 0v-1.07A7 7 0 0 1 5.07 13H4a1 1 0 1 1 0-2h1.07A7 7 0 0 1 11 5.07V4a1 1 0 0 1 1-1Zm0 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10Zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"/>',
   settings: '<path d="M10.3 2.6a1 1 0 0 1 1-.6h1.4a1 1 0 0 1 1 .6l.6 1.7a7.6 7.6 0 0 1 1.6.9l1.8-.4a1 1 0 0 1 1.1.5l.7 1.2a1 1 0 0 1-.1 1.2l-1.2 1.3a7.7 7.7 0 0 1 0 1.9l1.2 1.3a1 1 0 0 1 .1 1.2l-.7 1.2a1 1 0 0 1-1.1.5l-1.8-.4a7.6 7.6 0 0 1-1.6.9l-.6 1.7a1 1 0 0 1-1 .6h-1.4a1 1 0 0 1-1-.6l-.6-1.7a7.6 7.6 0 0 1-1.6-.9l-1.8.4a1 1 0 0 1-1.1-.5l-.7-1.2a1 1 0 0 1 .1-1.2l1.2-1.3a7.7 7.7 0 0 1 0-1.9L4.1 8.1A1 1 0 0 1 4 6.9l.7-1.2a1 1 0 0 1 1.1-.5l1.8.4a7.6 7.6 0 0 1 1.6-.9l.6-1.7ZM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" transform="translate(0 1)"/>',
   minimize: '<rect x="5" y="11" width="14" height="2" rx="1"/>',
@@ -106,6 +120,13 @@ button.main.busy { animation: pulse 1.2s ease-in-out infinite; }
 .spacer { flex: 1; }
 select { padding: 6px 6px; background: var(--chip); max-width: 170px; }
 input[type=range] { width: 100%; margin: 0; accent-color: var(--accent); height: 18px; }
+.transcript { position: relative; max-height: min(38vh, 320px); overflow: auto; display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 10px; padding: 4px; }
+.transcript[hidden] { display: none; }
+.turn { all: unset; display: block; padding: 6px 8px; border-radius: 8px; cursor: pointer; line-height: 1.45; }
+.turn:hover { background: var(--chip); }
+.turn:focus-visible { outline: 2px solid var(--accent); }
+.turn b { color: var(--accent); font-weight: 600; margin-right: 6px; }
+.turn.on { background: var(--chip); box-shadow: inset 3px 0 0 var(--accent); }
 .preview { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: none; }
 .preview.on { display: block; }
 .pill {
@@ -125,6 +146,9 @@ export class PlayerBar {
   private els: Record<string, HTMLElement> = {};
   private dragging = false;
   private view: PlayerView | null = null;
+  private renderedTranscript: TranscriptItem[] | null = null;
+  private activeTurn = -1;
+  private pointerInTranscript = false;
 
   constructor(private h: PlayerHandlers) {
     this.host.style.display = 'none';
@@ -142,6 +166,7 @@ export class PlayerBar {
           <button data-act="minimize" aria-label="Minimize player" title="Minimize">${icon('minimize')}</button>
           <button data-act="close" aria-label="Stop and close" title="Stop and close">${icon('close')}</button>
         </div>
+        <div class="transcript" data-el="transcript" role="list" aria-label="Podcast transcript" hidden></div>
         <input type="range" data-el="progress" min="0" max="0" step="1" value="0" aria-label="Position (sentence)" />
         <div class="preview" data-el="preview"></div>
         <div class="controls">
@@ -156,6 +181,7 @@ export class PlayerBar {
           <span class="spacer"></span>
           <select data-el="pace" aria-label="Speed" title="Speed (applies from the next sentence)"></select>
           <select data-el="voice" aria-label="Voice" title="Voice"></select>
+          <button data-act="podcast" aria-label="Turn this page into a podcast" title="Podcast: two hosts discuss this page">${icon('podcast')}</button>
           <button data-act="jump" data-el="jump" aria-pressed="false" aria-label="Click text to jump" title="Click any sentence on the page to read from there (or Alt+click anytime)">${icon('jump')}</button>
           <button data-act="settings" aria-label="Settings" title="Settings">${icon('settings')}</button>
         </div>
@@ -178,6 +204,7 @@ export class PlayerBar {
         case 'prevBlock': return this.h.prevBlock();
         case 'nextBlock': return this.h.nextBlock();
         case 'jump': return this.h.toggleJump();
+        case 'podcast': return this.h.podcast();
         case 'settings': return this.h.openSettings();
         case 'close': return this.h.close();
         case 'minimize': return wrap.classList.add('min');
@@ -206,6 +233,9 @@ export class PlayerBar {
         this.h.openSettings();
       } else this.h.setVoice(sel.value);
     });
+    // Don't auto-scroll the transcript out from under the pointer.
+    this.els.transcript!.addEventListener('pointerenter', () => (this.pointerInTranscript = true));
+    this.els.transcript!.addEventListener('pointerleave', () => (this.pointerInTranscript = false));
     // Keep page shortcuts from firing while using the bar.
     wrap.addEventListener('keydown', (e) => e.stopPropagation());
 
@@ -290,6 +320,36 @@ export class PlayerBar {
       voice.value = v.voice;
     }
     this.els.jump!.setAttribute('aria-pressed', String(v.jumpMode));
+    this.renderTranscript(v.transcript ?? null, state.index);
+  }
+
+  private renderTranscript(items: TranscriptItem[] | null, index: number) {
+    const box = this.els.transcript!;
+    if (items !== this.renderedTranscript) {
+      this.renderedTranscript = items;
+      this.activeTurn = -1;
+      box.hidden = !items?.length;
+      box.replaceChildren(
+        ...(items ?? []).map((t) => {
+          const b = document.createElement('button');
+          b.className = 'turn';
+          b.setAttribute('role', 'listitem');
+          b.append(Object.assign(document.createElement('b'), { textContent: t.label }), t.text);
+          b.addEventListener('click', () => this.h.seekAndPlay?.(t.start) ?? this.h.seek(t.start));
+          return b;
+        }),
+      );
+    }
+    if (!items?.length) return;
+    let active = 0;
+    for (let i = 0; i < items.length; i++) if (items[i]!.start <= index) active = i;
+    if (active === this.activeTurn) return;
+    box.children[this.activeTurn]?.classList.remove('on');
+    const el = box.children[active] as HTMLElement | undefined;
+    el?.classList.add('on');
+    this.activeTurn = active;
+    // Keep the current turn in view inside the panel without scrolling the page.
+    if (el && !this.pointerInTranscript) box.scrollTo({ top: el.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
   }
 }
 

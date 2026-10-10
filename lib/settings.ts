@@ -1,4 +1,5 @@
 import { storage } from '#imports';
+import type { PodcastLength } from './podcast';
 import type { SarvamModel, Transport } from './sarvam';
 
 // `local:` keeps everything (including the API key) on this device only; nothing is synced.
@@ -55,3 +56,24 @@ export async function getPrefs(): Promise<ReadingPrefs> {
 export const cacheLimitMbItem = storage.defineItem<number>('local:cacheLimitMb', { fallback: 200 });
 
 export const SPEED_STEPS = [0.75, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
+
+export interface PodcastPrefs {
+  length: PodcastLength;
+  /** Host voices per model (A = lead host, B = co-host). */
+  hosts: Record<SarvamModel, { A: string; B: string }>;
+}
+
+export const DEFAULT_PODCAST: PodcastPrefs = {
+  length: 'short',
+  hosts: {
+    'bulbul:v4-flash': { A: 'simran_en_conversation', B: 'deven_en_conversation' },
+    'bulbul:v3': { A: 'priya', B: 'aditya' },
+  },
+};
+
+export const podcastItem = storage.defineItem<PodcastPrefs>('local:podcast', { fallback: DEFAULT_PODCAST });
+
+export async function getPodcastPrefs(): Promise<PodcastPrefs> {
+  const v = await podcastItem.getValue();
+  return { ...DEFAULT_PODCAST, ...v, hosts: { ...DEFAULT_PODCAST.hosts, ...v.hosts } };
+}
