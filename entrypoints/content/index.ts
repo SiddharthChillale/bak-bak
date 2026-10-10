@@ -2,14 +2,24 @@ import './style.css';
 import { browser, type Browser, type ContentScriptContext } from '#imports';
 import type { PlayerCommand, ToBackground, ToContent, TtsPortRequest, TtsPortResponse, VoiceSettings } from '@/lib/messages';
 import { TTS_PORT } from '@/lib/messages';
-import { WebAudioOut } from '@/lib/player/audio';
+import { WebAudioOut, type Scheduled } from '@/lib/player/audio';
 import { PlaybackController } from '@/lib/player/controller';
 import { Highlighter } from '@/lib/player/highlight';
-import { PlayerBar, type Notice, type TranscriptItem } from '@/lib/player/ui';
-import type { PodcastScript, ScriptRequest } from '@/lib/podcast';
+import { PlayerBar, type Notice, type PlayerMode, type PodcastPanel, type TranscriptItem } from '@/lib/player/ui';
+import type { PodcastLength, PodcastScript, ScriptRequest } from '@/lib/podcast';
 import { clearResume, getResume, pageKey, saveResume } from '@/lib/resume';
 import { base64ToBytes } from '@/lib/sarvam';
-import { SPEED_STEPS, getPodcastPrefs, getPrefs, modelItem, paceItem, prefsItem, voiceItem, type ReadingPrefs } from '@/lib/settings';
+import {
+  SPEED_STEPS,
+  getPodcastPrefs,
+  getPrefs,
+  modelItem,
+  paceItem,
+  podcastItem,
+  prefsItem,
+  voiceItem,
+  type ReadingPrefs,
+} from '@/lib/settings';
 import {
   type ArticleDoc,
   articleText,
@@ -21,10 +31,12 @@ import {
   locate,
 } from '@/lib/text/extract';
 import { formatInr } from '@/lib/usage';
-import { READING_SHORTLIST, prettyVoice } from '@/lib/voices';
+import { READING_SHORTLIST, prettyVoice, voicesFor } from '@/lib/voices';
 
 /** Rough speaking rate used for time estimates at pace 1 (chars/second). */
 const CHARS_PER_SEC = 15;
+/** Sarvam-105B cost for one script is tiny; shown so the button isn't a surprise. */
+const SCRIPT_COST_TEXT = 'about ₹0.25';
 
 export default defineContentScript({
   matches: ['<all_urls>'],
@@ -51,8 +63,45 @@ function send(msg: ToBackground) {
   browser.runtime.sendMessage(msg).catch(() => undefined);
 }
 
+/**
+ * Podcast mode runs step by step, each step on the user's button press:
+ * setup (pick hosts) → writing → scripted (transcript shown) → voiced (audio generated).
+ */
+type PodStage = 'setup' | 'writing' | 'scripted' | 'voiced';
+
+interface PodState {
+  stage: PodStage;
+  hosts: { A: string; B: string };
+  length: PodcastLength;
+  /** Script for the current article + hosts + length, once written. */
+  doc: ArticleDoc | null;
+  voices: VoiceSettings[];
+  transcript: TranscriptItem[];
+  error: string | null;
+  /** Invalidates in-flight script requests when the setup changes. */
+  token: number;
+}
+
 class ReaderApp {
+  private mode: PlayerMode = 'article';
+  /** What the controller is playing (article, selection, or podcast script). */
   private doc: ArticleDoc | null = null;
+  /** Extracted article, kept so switching modes doesn't re-extract. */
+  private articleDoc: ArticleDoc | null = null;
+  private articleTextCache: { doc: ArticleDoc; text: string; hash: string } | null = null;
+  private positions: Record<PlayerMode, number> = { article: 0, podcast: 0 };
+  private pod: PodState = {
+    stage: 'setup',
+    hosts: { A: '', B: '' },
+    length: 'short',
+    doc: null,
+    voices: [],
+    transcript: [],
+    error: null,
+    token: 0,
+  };
+  private preview: Scheduled | null = null;
+
   private audio = new WebAudioOut();
   private controller: PlaybackController;
   private highlighter = new Highlighter();
@@ -61,10 +110,7 @@ class ReaderApp {
   private nextId = 1;
   /** In-flight port requests; index is the chunk for audio requests, -1 otherwise. */
   private pending = new Map<number, { index: number; handle: (msg: TtsPortResponse) => void }>();
-  /** Per-chunk voice overrides (podcast hosts); null = use the reading voice. */
-  private chunkVoices: VoiceSettings[] | null = null;
-  private transcript: TranscriptItem[] | null = null;
-  /** A standalone message (no document to show yet, or a podcast being written). */
+  /** A standalone message (e.g. no article found). */
   private message: { title: string; notice: Notice } | null = null;
   private voice: VoiceSettings = { model: 'bulbul:v4-flash', speaker: 'shubh_en_narration', pace: 1 };
   private prefs: ReadingPrefs | null = null;
@@ -92,6 +138,8 @@ class ReaderApp {
       if (n && ((n.clearWhen === 'playing' && s.status === 'playing') || (n.clearWhen === 'moved' && s.index > n.at + 1))) {
         this.notice = null;
       }
+      // Loading a doc resets to idle at 0; only real positions count.
+      if (this.doc && s.status !== 'idle') this.positions[this.mode] = s.index;
       this.persistPosition();
       this.render();
     });
@@ -101,8 +149,12 @@ class ReaderApp {
     const onVoiceChange = () => void this.loadSettings().then(() => this.controller.invalidateAudio());
     this.unwatch.push(
       voiceItem.watch(onVoiceChange),
-      modelItem.watch(onVoiceChange),
       paceItem.watch(onVoiceChange),
+      modelItem.watch(() => {
+        onVoiceChange();
+        // Host voices are per model.
+        void this.loadPodcastPrefs().then(() => this.podSetupChanged());
+      }),
       prefsItem.watch(() => void this.loadSettings()),
     );
 
@@ -113,14 +165,17 @@ class ReaderApp {
     await this.loadSettings();
     switch (cmd) {
       case 'toggle':
-        if (this.doc) return this.controller.toggle();
+        if (this.doc || this.mode === 'podcast') {
+          this.ensureUi().show();
+          return this.onToggle();
+        }
         return this.startArticle(0);
       case 'read-page':
         return this.startArticle(0);
       case 'read-from-selection':
         return this.readFromSelection();
       case 'podcast':
-        return this.startPodcast();
+        return this.setMode('podcast');
       case 'next':
         return this.controller.next();
       case 'prev':
@@ -136,6 +191,11 @@ class ReaderApp {
     this.controller.stop();
     this.controller.load([]);
     this.doc = null;
+    this.articleDoc = null;
+    this.articleTextCache = null;
+    this.mode = 'article';
+    this.positions = { article: 0, podcast: 0 };
+    this.pod = { ...this.pod, stage: 'setup', doc: null, voices: [], transcript: [], error: null, token: this.pod.token + 1 };
     this.highlighter.clear();
     this.setJumpMode(false);
     this.ui?.hide();
@@ -151,6 +211,234 @@ class ReaderApp {
     this.unwatch.forEach((u) => u());
   }
 
+  // ---- modes ---------------------------------------------------------------
+
+  /** Switch between reading the page and the podcast. Never starts synthesis by itself. */
+  private setMode(mode: PlayerMode) {
+    this.ensureUi().show();
+    if (mode === this.mode && (this.doc || mode === 'podcast')) return this.render();
+    this.stopPreview();
+    this.controller.stop();
+    this.highlighter.clear();
+    this.notice = null;
+    this.message = null;
+    this.mode = mode;
+
+    if (mode === 'article') {
+      const doc = this.articleDoc ?? this.extract();
+      if (!doc) {
+        this.doc = null;
+        this.controller.load([]);
+        return this.showMessage("Couldn't find an article on this page. Select some text, right-click it and choose “Read aloud from here”.");
+      }
+      this.articleDoc = doc;
+      this.setDoc(doc);
+      if (this.positions.article > 0) this.controller.seek(this.positions.article);
+      return;
+    }
+    void this.openPodcast();
+  }
+
+  private async openPodcast() {
+    const article = this.articleDoc ?? this.extract();
+    if (!article) {
+      this.doc = null;
+      this.controller.load([]);
+      return this.showMessage("Couldn't find an article on this page to turn into a podcast.");
+    }
+    this.articleDoc = article;
+    if (!this.pod.hosts.A && !this.pod.hosts.B) await this.loadPodcastPrefs();
+    if (this.mode !== 'podcast') return;
+
+    if (this.pod.doc) {
+      this.setDoc(this.pod.doc, { voices: this.pod.voices, transcript: this.pod.transcript });
+      if (this.positions.podcast > 0) this.controller.seek(this.positions.podcast);
+      return;
+    }
+    this.doc = null;
+    this.controller.load([]);
+    this.render();
+    await this.findCachedScript();
+  }
+
+  private async loadPodcastPrefs() {
+    const prefs = await getPodcastPrefs();
+    this.pod.hosts = { ...prefs.hosts[this.voice.model] };
+    this.pod.length = prefs.length;
+  }
+
+  private hostsValid(): boolean {
+    const { A, B } = this.pod.hosts;
+    return !!A && !!B && A !== B;
+  }
+
+  /** Hosts or length changed: any existing script no longer matches. */
+  private podSetupChanged() {
+    this.pod.token++;
+    this.pod.error = null;
+    this.notice = null;
+    if (this.pod.doc) {
+      this.pod.doc = null;
+      this.pod.voices = [];
+      this.pod.transcript = [];
+      this.positions.podcast = 0;
+      if (this.mode === 'podcast') {
+        this.controller.stop();
+        this.controller.load([]);
+        this.doc = null;
+      }
+    }
+    this.pod.stage = 'setup';
+    this.render();
+    if (this.mode === 'podcast') void this.findCachedScript();
+  }
+
+  private setHost(which: 'A' | 'B', voice: string) {
+    this.pod.hosts = { ...this.pod.hosts, [which]: voice };
+    void this.savePodcastPrefs();
+    this.podSetupChanged();
+  }
+
+  private setPodcastLength(length: PodcastLength) {
+    this.pod.length = length;
+    void this.savePodcastPrefs();
+    this.podSetupChanged();
+  }
+
+  private async savePodcastPrefs() {
+    const prefs = await getPodcastPrefs();
+    await podcastItem.setValue({
+      length: this.pod.length,
+      hosts: { ...prefs.hosts, [this.voice.model]: { ...this.pod.hosts } },
+    });
+  }
+
+  /** The panel's single button: write the script, then (same button) generate the audio. */
+  private podcastAction() {
+    if (this.pod.stage === 'setup') return void this.writeScript();
+    if (this.pod.stage === 'scripted') return this.generateAudio(this.positions.podcast);
+  }
+
+  private scriptRequest(): { request: ScriptRequest; key: string } | null {
+    const article = this.articleDoc;
+    if (!article || !this.hostsValid()) return null;
+    if (this.articleTextCache?.doc !== article) {
+      const text = articleText(article);
+      this.articleTextCache = { doc: article, text, hash: hashString(text) };
+    }
+    const { text, hash } = this.articleTextCache;
+    const names = { A: hostName(this.pod.hosts.A), B: hostName(this.pod.hosts.B) };
+    if (names.A === names.B) names.B = `${names.B} Two`;
+    return {
+      request: { title: article.title, text, hosts: names, length: this.pod.length },
+      key: `${pageKey()}|${this.pod.length}|${this.pod.hosts.A}|${this.pod.hosts.B}|${hash}`,
+    };
+  }
+
+  /** A script for this exact setup may already exist (written earlier); show it without spending anything. */
+  private async findCachedScript() {
+    const req = this.scriptRequest();
+    if (!req) return;
+    const token = this.pod.token;
+    try {
+      const script = await this.requestScript(req.request, req.key, true);
+      if (token === this.pod.token && this.mode === 'podcast' && this.pod.stage === 'setup') this.applyScript(script, req.request);
+    } catch {
+      // Not written yet: stay in setup.
+    }
+  }
+
+  private async writeScript() {
+    const req = this.scriptRequest();
+    if (!req) return;
+    const token = ++this.pod.token;
+    this.pod.stage = 'writing';
+    this.pod.error = null;
+    this.notice = null;
+    this.render();
+    try {
+      const script = await this.requestScript(req.request, req.key, false);
+      if (token !== this.pod.token) return;
+      this.applyScript(script, req.request);
+    } catch (e) {
+      if (token !== this.pod.token) return;
+      this.pod.stage = 'setup';
+      this.pod.error = (e as Error).message;
+      this.render();
+    }
+  }
+
+  private applyScript(script: PodcastScript, request: ScriptRequest) {
+    const doc = docFromTexts('podcast', script.title || request.title, script.turns.map((t) => t.text));
+    const voiceOf = (block: number) => ({ ...this.voice, speaker: this.pod.hosts[script.turns[block]!.speaker] });
+    const transcript: TranscriptItem[] = [];
+    for (const c of doc.chunks) {
+      if (transcript.at(-1)?.block === c.block) continue;
+      transcript.push({
+        block: c.block,
+        start: c.index,
+        label: request.hosts[script.turns[c.block]!.speaker],
+        text: doc.blocks[c.block]!.text,
+      });
+    }
+    this.pod = { ...this.pod, stage: 'scripted', doc, voices: doc.chunks.map((c) => voiceOf(c.block)), transcript, error: null };
+    this.positions.podcast = 0;
+    if (this.mode === 'podcast') this.setDoc(doc, { voices: this.pod.voices, transcript });
+  }
+
+  private generateAudio(from: number) {
+    if (!this.pod.doc) return;
+    this.pod.stage = 'voiced';
+    if (this.doc !== this.pod.doc) this.setDoc(this.pod.doc, { voices: this.pod.voices, transcript: this.pod.transcript });
+    this.controller.play(from);
+  }
+
+  /** Play/pause button and Alt+Shift+R. In podcast mode, nothing is generated before its button is pressed. */
+  private onToggle() {
+    if (this.mode === 'podcast') {
+      if (this.pod.stage === 'scripted') return this.generateAudio(this.controller.state.index);
+      if (this.pod.stage !== 'voiced') {
+        this.notice = {
+          text: this.pod.stage === 'writing' ? 'The script is still being written…' : 'Choose the two host voices, then press “Write script”.',
+          tone: 'attn',
+          actions: [],
+          clearWhen: 'playing',
+          at: 0,
+        };
+        return this.render();
+      }
+    }
+    if (!this.doc) return void this.startArticle(0);
+    this.controller.toggle();
+  }
+
+  private onTranscriptClick(index: number) {
+    if (this.mode === 'podcast' && this.pod.stage === 'scripted') return this.generateAudio(index);
+    this.controller.play(index);
+  }
+
+  /** Short sample of a voice so hosts can be chosen by ear (cached after the first play). */
+  private async previewVoice(voice: string) {
+    if (!voice) return;
+    this.audio.unlock();
+    this.controller.pause();
+    this.stopPreview();
+    const name = hostName(voice);
+    try {
+      const bytes = await this.requestAudio(`Hi, I'm ${name}. Welcome to the show.`, { ...this.voice, speaker: voice }, -1);
+      const clip = await this.audio.decode(bytes);
+      this.preview = this.audio.schedule(clip, this.audio.now + 0.02);
+    } catch (e) {
+      this.pod.error = `Couldn't play the sample: ${(e as Error).message}`;
+      this.render();
+    }
+  }
+
+  private stopPreview() {
+    this.preview?.stop();
+    this.preview = null;
+  }
+
   // ---- loading -------------------------------------------------------------
 
   private extract(): ArticleDoc | null {
@@ -163,8 +451,10 @@ class ReaderApp {
   }
 
   private loadArticle(): boolean {
-    const doc = this.extract();
+    const doc = this.articleDoc ?? this.extract();
     if (!doc) return false;
+    this.articleDoc = doc;
+    this.mode = 'article';
     this.setDoc(doc);
     return true;
   }
@@ -180,11 +470,18 @@ class ReaderApp {
     this.render();
   }
 
+  /** Per-chunk voice overrides (podcast hosts); null = use the reading voice. */
+  private chunkVoices: VoiceSettings[] | null = null;
+  private transcript: TranscriptItem[] | null = null;
+
   private async startArticle(from: number) {
+    this.stopPreview();
+    if (this.mode !== 'article') this.controller.stop();
     if (!this.loadArticle()) {
       const sel = window.getSelection();
       const selDoc = sel && !sel.isCollapsed ? docFromSelection(sel) : null;
       if (selDoc?.chunks.length) {
+        this.mode = 'article';
         this.setDoc(selDoc);
         return this.controller.play(0);
       }
@@ -242,7 +539,7 @@ class ReaderApp {
     this.render();
   }
 
-  /** Remember the position for articles (not ad-hoc selections), debounced. */
+  /** Remember the position for articles (not selections or podcasts), debounced. */
   private persistPosition() {
     const doc = this.doc;
     if (doc?.kind !== 'article') return;
@@ -257,52 +554,49 @@ class ReaderApp {
     this.saveTimer = setTimeout(() => void saveResume(key, index, total), 1000);
   }
 
-  private async startPodcast() {
-    // From the bar this runs inside a click: unlock audio now, since playback starts after the script arrives.
-    this.audio.unlock();
-    const article = this.doc?.kind === 'article' ? this.doc : this.extract();
-    if (!article) {
-      this.showMessage("Couldn't find an article on this page to turn into a podcast.");
-      return;
+  private readFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return this.startArticle(0);
+    const range = sel.getRangeAt(0);
+    this.stopPreview();
+    // Prefer continuing through the whole article from the selected sentence.
+    if (this.doc?.kind !== 'article') {
+      this.controller.stop();
+      this.loadArticle();
     }
-    const podcast = await getPodcastPrefs();
-    const voices = podcast.hosts[this.voice.model];
-    const names = { A: hostName(voices.A), B: hostName(voices.B) };
-    if (names.A === names.B) names.B = `${names.B} Two`;
-    const text = articleText(article);
-    const request: ScriptRequest = { title: article.title, text, hosts: names, length: podcast.length };
-    const key = `${pageKey()}|${podcast.length}|${names.A}|${names.B}|${hashString(text)}`;
-
-    this.controller.stop();
-    this.showMessage(`Writing a ${podcast.length} podcast script with Sarvam-105B (${names.A} and ${names.B})… this takes about 20–60 seconds.`, {
-      title: `Podcast · ${article.title}`,
-    });
-
-    let script: PodcastScript;
-    try {
-      script = await this.requestScript(request, key);
-    } catch (e) {
-      this.showMessage(`Couldn't write the podcast: ${(e as Error).message}`, {
-        title: `Podcast · ${article.title}`,
-        tone: 'err',
-        actions: [{ label: 'Try again', run: () => void this.startPodcast() }],
-      });
-      return;
-    }
-
-    const doc = docFromTexts('podcast', script.title || article.title, script.turns.map((t) => t.text));
-    const turnVoice = (block: number) => ({ ...this.voice, speaker: voices[script.turns[block]!.speaker] });
-    const transcript: TranscriptItem[] = [];
-    for (const c of doc.chunks) {
-      if (transcript.at(-1)?.block === c.block) continue;
-      transcript.push({ block: c.block, start: c.index, label: names[script.turns[c.block]!.speaker], text: doc.blocks[c.block]!.text });
-    }
-    this.notice = null;
-    this.setDoc(doc, { voices: doc.chunks.map((c) => turnVoice(c.block)), transcript });
-    this.confirmThenPlay(0, 'Podcast ready');
+    const idx = this.doc?.kind === 'article' ? locate(this.doc, range.startContainer, range.startOffset) : -1;
+    if (idx >= 0) return this.controller.play(idx);
+    const selDoc = docFromSelection(sel);
+    if (!selDoc?.chunks.length) return;
+    this.mode = 'article';
+    this.setDoc(selDoc);
+    this.controller.play(0);
   }
 
-  private requestScript(request: ScriptRequest, cacheKey: string): Promise<PodcastScript> {
+  // ---- requests over the background port -----------------------------------
+
+  private synth(index: number, speech: string): Promise<ArrayBuffer> {
+    return this.requestAudio(speech, this.chunkVoices?.[index] ?? this.voice, index);
+  }
+
+  private requestAudio(text: string, voice: VoiceSettings, index: number): Promise<ArrayBuffer> {
+    const port = this.connect();
+    const id = this.nextId++;
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, {
+        index,
+        handle: (msg) => {
+          if (msg.type === 'audio') {
+            const bytes = base64ToBytes(msg.base64);
+            resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+          } else reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'));
+        },
+      });
+      port.postMessage({ type: 'synthesize', id, text, voice: { ...voice } } satisfies TtsPortRequest);
+    });
+  }
+
+  private requestScript(request: ScriptRequest, cacheKey: string, cacheOnly: boolean): Promise<PodcastScript> {
     const port = this.connect();
     const id = this.nextId++;
     // Chrome may stop an idle service worker after ~30 s; port traffic keeps it alive.
@@ -318,42 +612,8 @@ class ReaderApp {
         index: -1,
         handle: (msg) => (msg.type === 'script' ? resolve(msg.script) : reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'))),
       });
-      port.postMessage({ type: 'script', id, request, cacheKey } satisfies TtsPortRequest);
+      port.postMessage({ type: 'script', id, request, cacheKey, cacheOnly } satisfies TtsPortRequest);
     }).finally(() => clearInterval(keepAlive));
-  }
-
-  private readFromSelection() {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) return this.startArticle(0);
-    const range = sel.getRangeAt(0);
-    // Prefer continuing through the whole article from the selected sentence.
-    if (this.doc?.kind !== 'article') this.loadArticle();
-    const idx = this.doc ? locate(this.doc, range.startContainer, range.startOffset) : -1;
-    if (idx >= 0) return this.controller.play(idx);
-    const selDoc = docFromSelection(sel);
-    if (!selDoc?.chunks.length) return;
-    this.setDoc(selDoc);
-    this.controller.play(0);
-  }
-
-  // ---- synthesis over the background port ----------------------------------
-
-  private synth(index: number, speech: string): Promise<ArrayBuffer> {
-    const port = this.connect();
-    const id = this.nextId++;
-    const voice = this.chunkVoices?.[index] ?? this.voice;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, {
-        index,
-        handle: (msg) => {
-          if (msg.type === 'audio') {
-            const bytes = base64ToBytes(msg.base64);
-            resolve(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-          } else reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'));
-        },
-      });
-      port.postMessage({ type: 'synthesize', id, text: speech, voice: { ...voice } } satisfies TtsPortRequest);
-    });
   }
 
   private cancel(index: number) {
@@ -402,13 +662,20 @@ class ReaderApp {
     if (this.ui && e.composedPath().includes(this.ui.host)) return;
     const pos = caretFromPoint(e.clientX, e.clientY);
     if (!pos) return;
-    // Alt+click works even before the player has been opened.
-    if (!this.doc && e.altKey && !this.loadArticle()) return;
-    if (!this.doc) return;
-    const idx = locate(this.doc, pos.node, pos.offset);
+    const article = this.doc?.kind === 'article' ? this.doc : (this.articleDoc ?? (e.altKey ? this.extract() : null));
+    if (!article) return;
+    const idx = locate(article, pos.node, pos.offset);
     if (idx < 0) return;
     e.preventDefault();
     e.stopPropagation();
+    // Clicking the page always means "read the page from here", even from podcast mode.
+    if (this.doc !== article) {
+      this.stopPreview();
+      this.controller.stop();
+      this.articleDoc = article;
+      this.mode = 'article';
+      this.setDoc(article);
+    }
     this.controller.play(idx);
   }
 
@@ -422,7 +689,7 @@ class ReaderApp {
     const html = document.documentElement;
     if (on) html.setAttribute('data-readaloud-jump', '');
     else html.removeAttribute('data-readaloud-jump');
-    for (const b of this.doc?.blocks ?? []) {
+    for (const b of (this.articleDoc ?? this.doc)?.blocks ?? []) {
       if (!b.el) continue;
       if (on) b.el.setAttribute('data-readaloud-block', '');
       else b.el.removeAttribute('data-readaloud-block');
@@ -443,18 +710,22 @@ class ReaderApp {
 
   private ensureUi(): PlayerBar {
     this.ui ??= new PlayerBar({
-      toggle: () => this.controller.toggle(),
+      toggle: () => this.onToggle(),
       prev: () => this.controller.prev(),
       next: () => this.controller.next(),
       prevBlock: () => this.controller.prevBlock(),
       nextBlock: () => this.controller.nextBlock(),
       seek: (i) => this.controller.seek(i),
-      seekAndPlay: (i) => this.controller.play(i),
+      seekAndPlay: (i) => this.onTranscriptClick(i),
       setPace: (p) => void paceItem.setValue(p),
       setVoice: (v) => void voiceItem.setValue(v),
       toggleJump: () => this.setJumpMode(!this.jumpMode),
       openSettings: () => send({ type: 'open-options' }),
-      podcast: () => void this.startPodcast(),
+      setMode: (m) => this.setMode(m),
+      setHost: (which, v) => this.setHost(which, v),
+      setPodcastLength: (l) => this.setPodcastLength(l),
+      podcastAction: () => this.podcastAction(),
+      previewVoice: (v) => void this.previewVoice(v),
       close: () => this.reset(),
     });
     return this.ui;
@@ -478,20 +749,68 @@ class ReaderApp {
         notice: this.message.notice,
         state: { status: 'idle', index: 0, total: 0, buffering: false },
         transcript: null,
+        podcast: null,
       });
-    } else if (this.doc) {
+    } else if (this.doc || this.mode === 'podcast') {
       this.ui.render(this.viewBase());
     }
+  }
+
+  private podcastPanel(): PodcastPanel {
+    const { stage, hosts, length } = this.pod;
+    const valid = this.hostsValid();
+    const button: PodcastPanel['button'] =
+      stage === 'setup'
+        ? {
+            label: 'Write script',
+            tip: valid
+              ? `Sarvam-105B writes a conversation between the two hosts from this page (${SCRIPT_COST_TEXT})`
+              : 'Choose two different host voices first',
+            disabled: !valid,
+            busy: false,
+          }
+        : stage === 'writing'
+          ? { label: 'Writing script…', tip: 'Usually takes 20–60 seconds', disabled: true, busy: true }
+          : stage === 'scripted'
+            ? {
+                label: `Generate audio · ≈ ${formatInr(this.pod.doc?.speechChars ?? 0)}`,
+                tip: 'Voice the script with the two hosts (sentences already generated are free)',
+                disabled: false,
+                busy: false,
+              }
+            : null;
+    return { voices: voicesFor(this.voice.model), hostA: hosts.A, hostB: hosts.B, length, button, locked: stage === 'writing' };
+  }
+
+  private podcastNotice(): Notice | null {
+    if (this.pod.error) {
+      return {
+        text: this.pod.error,
+        tone: 'err',
+        actions: /key|settings|credit/i.test(this.pod.error) ? [{ label: 'Open settings', run: () => send({ type: 'open-options' }) }] : [],
+      };
+    }
+    const text =
+      this.pod.stage === 'setup'
+        ? this.hostsValid()
+          ? 'Ready: press “Write script” to have the two hosts discuss this page.'
+          : 'Choose two host voices (use ▶ to hear them), then press “Write script”.'
+        : this.pod.stage === 'writing'
+          ? `Writing the script with Sarvam-105B (${hostName(this.pod.hosts.A)} and ${hostName(this.pod.hosts.B)})… usually 20–60 seconds.`
+          : this.pod.stage === 'scripted' && this.controller.state.status === 'idle'
+            ? 'Script ready. Read it below, then press “Generate audio” to hear it.'
+            : null;
+    return text ? { text, tone: 'info', actions: [] } : null;
   }
 
   private viewBase() {
     const doc = this.doc;
     const state = this.controller.state;
+    const podcastMode = this.mode === 'podcast';
     const remainingChars = doc ? doc.chunks.slice(state.index).reduce((n, c) => n + c.speech.length, 0) : 0;
     const minutes = (doc?.speechChars ?? 0) / CHARS_PER_SEC / this.voice.pace / 60;
-    const notice: Notice | null =
-      this.notice ??
-      (state.status === 'error'
+    const errorNotice: Notice | null =
+      state.status === 'error'
         ? {
             text: state.error ?? 'Something went wrong.',
             tone: 'err',
@@ -502,25 +821,28 @@ class ReaderApp {
                 : []),
             ],
           }
-        : null);
-    const podcast = doc?.kind === 'podcast';
+        : null;
+    const notice = this.notice ?? errorNotice ?? (podcastMode ? this.podcastNotice() : null);
     const speakerOf = (i: number) => {
       const block = doc?.chunks[i]?.block;
       return this.transcript?.find((t) => t.block === block)?.label;
     };
+    const articleTitle = this.articleDoc?.title || document.title || 'Read Aloud';
     return {
-      title: podcast ? `Podcast · ${doc!.title}` : doc?.title || document.title || 'Read Aloud',
+      title: podcastMode ? `Podcast · ${articleTitle}` : doc?.title || articleTitle,
+      mode: this.mode,
+      podcast: podcastMode ? this.podcastPanel() : null,
       notice,
       state,
       chunkText: (i: number) => {
         const text = doc?.chunks[i]?.display ?? '';
-        const who = podcast ? speakerOf(i) : undefined;
+        const who = podcastMode ? speakerOf(i) : undefined;
         return who ? `${who}: ${text}` : text;
       },
       summary: doc
-        ? `${podcast ? `${this.transcript?.length ?? 0} turns` : `${doc.chunks.length} sentences`} · ~${Math.max(1, Math.round(minutes))} min · ≈ ${formatInr(doc.speechChars)} to synthesise (cached sentences are free)`
+        ? `${podcastMode ? `${this.transcript?.length ?? 0} turns` : `${doc.chunks.length} sentences`} · ~${Math.max(1, Math.round(minutes))} min · ≈ ${formatInr(doc.speechChars)} to synthesise (cached sentences are free)`
         : '',
-      transcript: this.transcript,
+      transcript: podcastMode ? this.transcript : null,
       remainingMinutes: remainingChars / CHARS_PER_SEC / this.voice.pace / 60,
       pace: this.voice.pace,
       paces: SPEED_STEPS,

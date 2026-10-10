@@ -59,15 +59,15 @@ export const SPEED_STEPS = [0.75, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
 
 export interface PodcastPrefs {
   length: PodcastLength;
-  /** Host voices per model (A = lead host, B = co-host). */
+  /** Host voices per model (A = lead host, B = co-host); '' until the user picks one. */
   hosts: Record<SarvamModel, { A: string; B: string }>;
 }
 
 export const DEFAULT_PODCAST: PodcastPrefs = {
   length: 'short',
   hosts: {
-    'bulbul:v4-flash': { A: 'simran_en_conversation', B: 'deven_en_conversation' },
-    'bulbul:v3': { A: 'priya', B: 'aditya' },
+    'bulbul:v4-flash': { A: '', B: '' },
+    'bulbul:v3': { A: '', B: '' },
   },
 };
 

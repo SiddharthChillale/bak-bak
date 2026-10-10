@@ -19,7 +19,7 @@ export default defineBackground(() => {
     browser.contextMenus.removeAll().then(() => {
       browser.contextMenus.create({ id: MENU_READ_PAGE, title: 'Read this page aloud', contexts: ['page'] });
       browser.contextMenus.create({ id: MENU_READ_FROM_HERE, title: 'Read aloud from here', contexts: ['selection'] });
-      browser.contextMenus.create({ id: MENU_PODCAST, title: 'Turn this page into a podcast', contexts: ['page'] });
+      browser.contextMenus.create({ id: MENU_PODCAST, title: 'Make a podcast from this page…', contexts: ['page'] });
     });
   });
 
@@ -103,7 +103,7 @@ function handleTtsPort(port: Browser.runtime.Port) {
       return;
     }
     if (msg.type === 'synthesize' && open) void serve({ port, id: msg.id, text: msg.text, voice: msg.voice });
-    if (msg.type === 'script' && open) void writeScript(port, msg.id, msg.request, msg.cacheKey);
+    if (msg.type === 'script' && open) void writeScript(port, msg.id, msg.request, msg.cacheKey, msg.cacheOnly);
   });
 }
 
@@ -178,11 +178,15 @@ const scriptsItem = storage.defineItem<Record<string, { script: PodcastScript; a
   fallback: {},
 });
 
-async function writeScript(port: Browser.runtime.Port, id: number, request: ScriptRequest, key: string) {
+async function writeScript(port: Browser.runtime.Port, id: number, request: ScriptRequest, key: string, cacheOnly = false) {
   try {
     const cached = (await scriptsItem.getValue())[key];
     if (cached) {
       reply(port, { type: 'script', id, script: cached.script, cached: true });
+      return;
+    }
+    if (cacheOnly) {
+      reply(port, { type: 'error', id, message: 'not cached', status: 404 });
       return;
     }
     const apiKey = await apiKeyItem.getValue();

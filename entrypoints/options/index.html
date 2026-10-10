@@ -68,7 +68,8 @@
         <h2>Podcast</h2>
         <p class="hint">Turns an article into a conversation between two hosts: Sarvam-105B writes the script
           (about ₹0.25 per article), then the hosts' voices read it (₹30 per 10,000 characters, like normal reading).
-          Start it from the microphone button on the player or by right-clicking the page.</p>
+          Switch the player to <b>Podcast</b> (or right-click the page → “Make a podcast from this page…”), pick the two
+          hosts there, press <b>Write script</b>, then <b>Generate audio</b>. Nothing is generated until you press those buttons.</p>
         <div class="grid">
           <label>Length
             <select id="podcastLength">
@@ -76,10 +77,10 @@
               <option value="standard">Standard (~10 min)</option>
             </select>
           </label>
-          <label>Lead host <select id="hostA"></select></label>
-          <label>Co-host <select id="hostB"></select></label>
+          <label>Host 1 (lead) <select id="hostA"></select></label>
+          <label>Host 2 (co-host) <select id="hostB"></select></label>
         </div>
-        <p class="hint">Host voices are saved per model. Scripts are cached, so replaying a podcast doesn't rewrite it.</p>
+        <p class="hint">These are the same host choices as in the player, saved per model. Scripts are cached, so reopening a podcast doesn't rewrite it.</p>
       </section>
 
       <section>

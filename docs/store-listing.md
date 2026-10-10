@@ -17,7 +17,7 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 > - Jump anywhere: Alt+click a sentence, select text and choose "Read aloud from here", or drag the progress bar.
 > - Play/pause, sentence and paragraph skipping, speed control, dozens of voices.
 > - Remembers where you stopped on each article.
-> - Podcast mode: turns an article into a short conversation between two hosts.
+> - Podcast mode: pick two hosts and turn the article into a short conversation, script first, audio on demand.
 > - Audio is cached on your device, so replaying never costs credits twice; see your estimated monthly spend.
 >
 > Requires your own Sarvam AI API key (sign up at dashboard.sarvam.ai; new accounts get free credits).

@@ -69,7 +69,7 @@ async function fillHosts() {
   const m = model.value as SarvamModel;
   const prefs = await getPodcastPrefs();
   for (const [sel, id] of [[hostA, prefs.hosts[m].A], [hostB, prefs.hosts[m].B]] as const) {
-    sel.replaceChildren(...voicesFor(m).map((v) => new Option(prettyVoice(v), v)));
+    sel.replaceChildren(new Option('Choose a voice…', ''), ...voicesFor(m).map((v) => new Option(prettyVoice(v), v)));
     sel.value = id;
   }
   podcastLength.value = prefs.length;

@@ -14,7 +14,7 @@ export interface VoiceSettings {
 export type TtsPortRequest =
   | { type: 'synthesize'; id: number; text: string; voice: VoiceSettings }
   /** Write a two-host podcast script for an article (Sarvam-105B). */
-  | { type: 'script'; id: number; request: ScriptRequest; cacheKey: string }
+  | { type: 'script'; id: number; request: ScriptRequest; cacheKey: string; cacheOnly?: boolean }
   /** Drop a request that hasn't been sent to Sarvam yet (no-op once in flight). */
   | { type: 'cancel'; id: number }
   /** Keeps Chrome's service worker awake during long requests (podcast scripts). */

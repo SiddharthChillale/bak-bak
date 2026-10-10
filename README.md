@@ -11,8 +11,10 @@ Indian-English voices from [Sarvam AI](https://www.sarvam.ai/) (Bulbul).
 - Audio is cached locally (IndexedDB), so replaying or going back never costs credits twice; the settings page
   shows estimated monthly spend, and long articles ask before starting (threshold configurable).
 - Remembers where you stopped on each article and continues from there (with a *Start over* option).
-- **Podcast mode**: Sarvam-105B rewrites the article as a two-host conversation, voiced by two Bulbul voices,
-  with a clickable transcript. Start it from the microphone button or *Turn this page into a podcast*.
+- **Read / Podcast switch** in the player. Podcast mode is step by step and on demand: pick the two host voices
+  (▶ previews each), press **Write script** (Sarvam-105B writes a two-host conversation; the transcript appears),
+  then press the same button, now **Generate audio**, to voice it. Each mode keeps its own position.
+- Every player control has a tooltip (hover, or focus with the keyboard).
 
 See [PLAN.md](PLAN.md) for the design and roadmap.
 
@@ -50,7 +52,8 @@ Then open the extension's settings, paste your Sarvam API key and pick a voice.
 | Read from a sentence | Alt+click it, or turn on click-to-jump (target icon) and click it |
 | Read from a selection | Select text → right-click → *Read aloud from here* |
 | Read a page that isn't an article | Select text → *Read aloud from here* |
-| Podcast version of the page | Microphone button on the player, or right-click → *Turn this page into a podcast* |
+| Podcast version of the page | **Podcast** switch on the player (or right-click → *Make a podcast from this page…*), choose hosts, **Write script**, then **Generate audio** |
+| Back to reading the page | **Read** switch on the player |
 
 Starting from the keyboard or context menu before you've clicked anywhere on the page can be blocked by the
 browser's autoplay policy; the player then asks you to press ▶ once.
