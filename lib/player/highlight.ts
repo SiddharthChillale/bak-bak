@@ -5,12 +5,15 @@
 
 const HIGHLIGHT_NAME = 'readaloud-current';
 const FALLBACK_ATTR = 'data-readaloud-current';
+const HOVER_NAME = 'readaloud-hover';
+const HOVER_FALLBACK_ATTR = 'data-readaloud-hover';
 /** Don't fight the user: skip autoscroll for a while after they scroll themselves. */
 const USER_SCROLL_GRACE_MS = 4000;
 
 export class Highlighter {
   private readonly supported = typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight === 'function';
   private fallbackEl: Element | null = null;
+  private hoverEl: Element | null = null;
   private lastUserScroll = 0;
   private readonly onUserScroll = () => (this.lastUserScroll = Date.now());
 
@@ -19,7 +22,8 @@ export class Highlighter {
     window.addEventListener('touchmove', this.onUserScroll, { passive: true });
   }
 
-  show(range: Range | null, block: Element | null, opts: { autoscroll: boolean; bottomInset: number }) {
+  /** `avoid`: the player's on-screen box; text beside it (not under it) isn't scrolled away from it. */
+  show(range: Range | null, block: Element | null, opts: { autoscroll: boolean; avoid: DOMRect | null }) {
     this.clear();
     if (range && this.supported) {
       CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(range));
@@ -32,7 +36,9 @@ export class Highlighter {
       if (rect && (rect.width || rect.height)) {
         // Only near the top can a sticky header be covering the sentence.
         const top = (rect.top < window.innerHeight * 0.55 ? stickyHeaderBottom() : 0) + 16;
-        const bottom = window.innerHeight - opts.bottomInset - 24;
+        const a = opts.avoid;
+        const underPlayer = a && a.width && rect.right > a.left - 8 && rect.left < a.right + 8;
+        const bottom = underPlayer ? a.top - 16 : window.innerHeight - 24;
         if (rect.top < top || rect.bottom > bottom) {
           // Aim a third of the way into the visible area below any sticky header;
           // sentences taller than that area are aligned to its top.
@@ -50,8 +56,26 @@ export class Highlighter {
     this.fallbackEl = null;
   }
 
+  /** "Jump to" preview: where reading would start if the user clicked now. */
+  hover(range: Range | null, block: Element | null) {
+    this.clearHover();
+    if (range && this.supported) {
+      CSS.highlights.set(HOVER_NAME, new Highlight(range));
+    } else if (block) {
+      block.setAttribute(HOVER_FALLBACK_ATTR, '');
+      this.hoverEl = block;
+    }
+  }
+
+  clearHover() {
+    if (this.supported) CSS.highlights.delete(HOVER_NAME);
+    this.hoverEl?.removeAttribute(HOVER_FALLBACK_ATTR);
+    this.hoverEl = null;
+  }
+
   destroy() {
     this.clear();
+    this.clearHover();
     window.removeEventListener('wheel', this.onUserScroll);
     window.removeEventListener('touchmove', this.onUserScroll);
   }

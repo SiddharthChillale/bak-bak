@@ -112,10 +112,11 @@ process, the page's CSP can't block requests, and caching is shared across tabs.
   Context-menu or keyboard starts rely on sticky activation; verify in the spike.
 
 ### 3.3 Controls & "jump to point"
-- Play/Pause, Stop, ◀︎ / ▶︎ sentence, ◀︎◀︎ / ▶︎▶︎ paragraph, speed (0.75–2×), voice, progress bar by chunk with
-  hover preview, auto-scroll toggle, "N min left" estimate.
-- Jump: **click any sentence** (click-to-seek mode), **select text → "Read from here"** (context menu),
-  drag the progress bar, keyboard commands (`commands` API).
+- Play/Pause, Stop, ◀︎ / ▶︎ sentence, ◀︎◀︎ / ▶︎▶︎ paragraph, speed (0.75–2×), voice, "N / total · N min left".
+  (The scrubbable progress bar was removed on 2026-10-10 in favour of "Jump to".)
+- Jump: **"Jump to"** pick mode (hover previews the sentence; click starts from that sentence's beginning, never
+  mid-sentence, so cached audio is reused), **Alt+click**, **select text → "Read from here"** (context menu),
+  keyboard commands (`commands` API).
 - Resume: remember the last chunk per URL.
 
 ### 3.4 Cost controls

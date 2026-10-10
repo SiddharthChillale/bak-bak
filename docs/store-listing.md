@@ -14,7 +14,7 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 > English.
 >
 > - Finds the article on the page and reads it sentence by sentence, highlighting as it goes.
-> - Jump anywhere: Alt+click a sentence, select text and choose "Read aloud from here", or drag the progress bar.
+> - Jump anywhere: press "Jump to" and click any line, Alt+click a sentence, or select text and choose "Read aloud from here".
 > - Play/pause, sentence and paragraph skipping, speed control, dozens of voices.
 > - Remembers where you stopped on each article.
 > - Podcast mode: pick two hosts and turn the article into a short conversation, script first, audio on demand.

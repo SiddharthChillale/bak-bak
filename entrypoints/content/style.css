@@ -1,5 +1,5 @@
 /* Injected via the manifest, so page CSPs can't block it. Applies to the page itself;
-   the player bar styles live in its shadow root. */
+   the player styles live in its shadow root. */
 
 ::highlight(readaloud-current) {
   background-color: rgba(255, 190, 40, 0.45);
@@ -11,12 +11,19 @@
   border-radius: 3px;
 }
 
-html[data-readaloud-jump] [data-readaloud-block] {
-  cursor: pointer;
+/* "Jump to" pick mode: the sentence under the pointer is where reading would start. */
+::highlight(readaloud-hover) {
+  background-color: rgba(180, 83, 42, 0.18);
+  text-decoration: underline 2px rgba(180, 83, 42, 0.7);
+  text-underline-offset: 3px;
 }
 
-html[data-readaloud-jump] [data-readaloud-block]:hover {
-  outline: 2px dashed rgba(180, 83, 42, 0.55);
-  outline-offset: 3px;
+[data-readaloud-hover] {
+  background-color: rgba(180, 83, 42, 0.12) !important;
   border-radius: 3px;
+}
+
+html[data-readaloud-pick] [data-readaloud-block],
+html[data-readaloud-pick] [data-readaloud-block] * {
+  cursor: pointer !important;
 }

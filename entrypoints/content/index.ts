@@ -78,6 +78,8 @@ interface PodState {
   voices: VoiceSettings[];
   transcript: TranscriptItem[];
   error: string | null;
+  /** Host names used in the current script (shown above the chat). */
+  names: { A: string; B: string };
   /** Invalidates in-flight script requests when the setup changes. */
   token: number;
 }
@@ -98,6 +100,7 @@ class ReaderApp {
     voices: [],
     transcript: [],
     error: null,
+    names: { A: '', B: '' },
     token: 0,
   };
   private preview: Scheduled | null = null;
@@ -114,7 +117,11 @@ class ReaderApp {
   private message: { title: string; notice: Notice } | null = null;
   private voice: VoiceSettings = { model: 'bulbul:v4-flash', speaker: 'shubh_en_narration', pace: 1 };
   private prefs: ReadingPrefs | null = null;
-  private jumpMode = false;
+  /** "Jump to" pick mode: the next click on an article sentence starts reading there. */
+  private picking = false;
+  private hoverIndex = -1;
+  private hoverFrame = 0;
+  private lastPointer: { x: number; y: number } | null = null;
   private announcedPlaying = false;
   private notice: (Notice & { clearWhen: 'playing' | 'moved'; at: number }) | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -197,7 +204,7 @@ class ReaderApp {
     this.positions = { article: 0, podcast: 0 };
     this.pod = { ...this.pod, stage: 'setup', doc: null, voices: [], transcript: [], error: null, token: this.pod.token + 1 };
     this.highlighter.clear();
-    this.setJumpMode(false);
+    this.stopPick();
     this.ui?.hide();
   }
 
@@ -377,11 +384,19 @@ class ReaderApp {
       transcript.push({
         block: c.block,
         start: c.index,
-        label: request.hosts[script.turns[c.block]!.speaker],
+        side: script.turns[c.block]!.speaker === 'A' ? 'left' : 'right',
         text: doc.blocks[c.block]!.text,
       });
     }
-    this.pod = { ...this.pod, stage: 'scripted', doc, voices: doc.chunks.map((c) => voiceOf(c.block)), transcript, error: null };
+    this.pod = {
+      ...this.pod,
+      stage: 'scripted',
+      doc,
+      voices: doc.chunks.map((c) => voiceOf(c.block)),
+      transcript,
+      names: { ...request.hosts },
+      error: null,
+    };
     this.positions.podcast = 0;
     if (this.mode === 'podcast') this.setDoc(doc, { voices: this.pod.voices, transcript });
   }
@@ -465,7 +480,6 @@ class ReaderApp {
     this.chunkVoices = extra?.voices ?? null;
     this.transcript = extra?.transcript ?? null;
     this.controller.load(doc.chunks.map((c) => ({ block: c.block, speech: c.speech })));
-    if (this.jumpMode) this.markBlocks(true);
     this.ensureUi().show();
     this.render();
   }
@@ -657,39 +671,126 @@ class ReaderApp {
 
   // ---- page interaction ----------------------------------------------------
 
+  /** Alt+click anytime, or any click while "Jump to" is active: read from that sentence's start. */
   private onPageClick(e: MouseEvent) {
-    if (!(this.jumpMode || e.altKey) || e.button !== 0) return;
+    if (!(this.picking || e.altKey) || e.button !== 0) return;
     if (this.ui && e.composedPath().includes(this.ui.host)) return;
+    // While picking, page clicks (links included) never act on the page.
+    if (this.picking) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const pos = caretFromPoint(e.clientX, e.clientY);
-    if (!pos) return;
-    const article = this.doc?.kind === 'article' ? this.doc : (this.articleDoc ?? (e.altKey ? this.extract() : null));
-    if (!article) return;
-    const idx = locate(article, pos.node, pos.offset);
-    if (idx < 0) return;
+    const hit = pos ? this.locateInArticle(pos.node, pos.offset, true) : null;
+    if (!hit) {
+      if (this.picking) {
+        this.notice = { text: 'That isn’t part of the article. Click a highlighted sentence, or press Esc to cancel.', tone: 'attn', actions: [], clearWhen: 'playing', at: 0 };
+        this.render();
+      }
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
+    this.stopPick();
+    this.notice = null;
     // Clicking the page always means "read the page from here", even from podcast mode.
-    if (this.doc !== article) {
+    if (this.doc !== hit.doc) {
       this.stopPreview();
       this.controller.stop();
-      this.articleDoc = article;
       this.mode = 'article';
-      this.setDoc(article);
+      this.setDoc(hit.doc);
     }
-    this.controller.play(idx);
+    this.controller.play(hit.index);
   }
 
-  private setJumpMode(on: boolean) {
-    this.jumpMode = on;
-    this.markBlocks(on);
+  /**
+   * Find the sentence at a page position. If the page has re-rendered since extraction
+   * (stale nodes), re-extract once and try again.
+   */
+  private locateInArticle(node: Node, offset: number, allowRefresh: boolean): { doc: ArticleDoc; index: number } | null {
+    const article = this.doc?.kind === 'article' ? this.doc : (this.articleDoc ?? this.extract());
+    if (!article) return null;
+    this.articleDoc = article;
+    const index = locate(article, node, offset);
+    if (index >= 0) return { doc: article, index };
+    if (!allowRefresh || !node.isConnected || !(node.textContent ?? '').trim()) return null;
+    const fresh = this.extract();
+    if (!fresh) return null;
+    const again = locate(fresh, node, offset);
+    if (again < 0) return null;
+    this.articleDoc = fresh;
+    if (this.picking) this.markBlocks(fresh, true);
+    return { doc: fresh, index: again };
+  }
+
+  private togglePick() {
+    if (this.picking) return this.stopPick();
+    const article = this.doc?.kind === 'article' ? this.doc : (this.articleDoc ?? this.extract());
+    if (!article) {
+      return this.showMessage("Couldn't find an article on this page to jump around in. Select text and right-click → “Read aloud from here” instead.");
+    }
+    this.articleDoc = article;
+    this.picking = true;
+    this.hoverIndex = -1;
+    document.documentElement.setAttribute('data-readaloud-pick', '');
+    this.markBlocks(article, true);
+    window.addEventListener('pointermove', this.onPickMove, { passive: true });
+    window.addEventListener('scroll', this.onPickScroll, { passive: true, capture: true });
+    window.addEventListener('keydown', this.onPickKey, { capture: true });
     this.render();
   }
 
-  private markBlocks(on: boolean) {
-    const html = document.documentElement;
-    if (on) html.setAttribute('data-readaloud-jump', '');
-    else html.removeAttribute('data-readaloud-jump');
-    for (const b of (this.articleDoc ?? this.doc)?.blocks ?? []) {
+  private stopPick() {
+    if (!this.picking) return;
+    this.picking = false;
+    cancelAnimationFrame(this.hoverFrame);
+    document.documentElement.removeAttribute('data-readaloud-pick');
+    if (this.articleDoc) this.markBlocks(this.articleDoc, false);
+    window.removeEventListener('pointermove', this.onPickMove);
+    window.removeEventListener('scroll', this.onPickScroll, { capture: true });
+    window.removeEventListener('keydown', this.onPickKey, { capture: true });
+    this.highlighter.clearHover();
+    if (this.notice?.tone === 'attn' && this.notice.text.startsWith('That isn’t part')) this.notice = null;
+    this.render();
+  }
+
+  private readonly onPickMove = (e: PointerEvent) => {
+    this.lastPointer = { x: e.clientX, y: e.clientY };
+    this.scheduleHover();
+  };
+
+  /** Scrolling moves text under a still pointer. */
+  private readonly onPickScroll = () => this.scheduleHover();
+
+  private readonly onPickKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.stopPick();
+  };
+
+  private scheduleHover() {
+    cancelAnimationFrame(this.hoverFrame);
+    this.hoverFrame = requestAnimationFrame(() => this.updateHover());
+  }
+
+  /** Preview where reading would start: the whole sentence under the pointer. */
+  private updateHover() {
+    const article = this.articleDoc;
+    const p = this.lastPointer;
+    if (!this.picking || !article || !p) return;
+    const pos = caretFromPoint(p.x, p.y);
+    const overUi = this.ui && document.elementFromPoint(p.x, p.y) === this.ui.host;
+    const index = pos && !overUi ? locate(article, pos.node, pos.offset) : -1;
+    if (index === this.hoverIndex) return;
+    this.hoverIndex = index;
+    const chunk = article.chunks[index];
+    if (!chunk) return this.highlighter.clearHover();
+    this.highlighter.hover(chunkRange(article, chunk), article.blocks[chunk.block]?.el ?? null);
+  }
+
+  private markBlocks(doc: ArticleDoc, on: boolean) {
+    for (const b of doc.blocks) {
       if (!b.el) continue;
       if (on) b.el.setAttribute('data-readaloud-block', '');
       else b.el.removeAttribute('data-readaloud-block');
@@ -702,7 +803,7 @@ class ReaderApp {
     const block = this.doc.blocks[chunk.block];
     this.highlighter.show(chunkRange(this.doc, chunk), block?.el ?? null, {
       autoscroll: this.prefs?.autoscroll ?? true,
-      bottomInset: this.ui?.height ?? 0,
+      avoid: this.ui?.rect ?? null,
     });
   }
 
@@ -715,11 +816,10 @@ class ReaderApp {
       next: () => this.controller.next(),
       prevBlock: () => this.controller.prevBlock(),
       nextBlock: () => this.controller.nextBlock(),
-      seek: (i) => this.controller.seek(i),
-      seekAndPlay: (i) => this.onTranscriptClick(i),
+      playFrom: (i) => this.onTranscriptClick(i),
       setPace: (p) => void paceItem.setValue(p),
       setVoice: (v) => void voiceItem.setValue(v),
-      toggleJump: () => this.setJumpMode(!this.jumpMode),
+      togglePick: () => this.togglePick(),
       openSettings: () => send({ type: 'open-options' }),
       setMode: (m) => this.setMode(m),
       setHost: (which, v) => this.setHost(which, v),
@@ -825,7 +925,8 @@ class ReaderApp {
     const notice = this.notice ?? errorNotice ?? (podcastMode ? this.podcastNotice() : null);
     const speakerOf = (i: number) => {
       const block = doc?.chunks[i]?.block;
-      return this.transcript?.find((t) => t.block === block)?.label;
+      const side = this.transcript?.find((t) => t.block === block)?.side;
+      return side ? this.pod.names[side === 'left' ? 'A' : 'B'] : undefined;
     };
     const articleTitle = this.articleDoc?.title || document.title || 'Read Aloud';
     return {
@@ -843,12 +944,13 @@ class ReaderApp {
         ? `${podcastMode ? `${this.transcript?.length ?? 0} turns` : `${doc.chunks.length} sentences`} · ~${Math.max(1, Math.round(minutes))} min · ≈ ${formatInr(doc.speechChars)} to synthesise (cached sentences are free)`
         : '',
       transcript: podcastMode ? this.transcript : null,
+      hostNames: podcastMode && this.transcript?.length ? { left: this.pod.names.A, right: this.pod.names.B } : null,
       remainingMinutes: remainingChars / CHARS_PER_SEC / this.voice.pace / 60,
       pace: this.voice.pace,
       paces: SPEED_STEPS,
       voice: this.voice.speaker,
       voices: READING_SHORTLIST[this.voice.model],
-      jumpMode: this.jumpMode,
+      picking: this.picking,
     };
   }
 }
