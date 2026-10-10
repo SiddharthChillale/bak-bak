@@ -28,6 +28,7 @@ export interface Chunk {
 }
 
 export interface ArticleDoc {
+  kind: 'article' | 'selection';
   title: string;
   blocks: Block[];
   chunks: Chunk[];
@@ -103,7 +104,7 @@ export function extractArticle(doc: Document, opts: ExtractOptions): ArticleDoc 
     title = tb.text;
   }
 
-  return buildDoc(title, blocks);
+  return buildDoc('article', title, blocks);
 }
 
 /** A document made of just the current selection (for pages that aren't articles). */
@@ -128,7 +129,7 @@ export function docFromSelection(sel: Selection): ArticleDoc | null {
     if (!text) return null;
     blocks.push({ el: null, map: null, start: 0, end: text.length, text, heading: false });
   }
-  return buildDoc('Selection', blocks);
+  return buildDoc('selection', 'Selection', blocks);
 }
 
 /** Chunk index for a position in the live page, or -1 if it's outside the doc. */
@@ -150,7 +151,7 @@ export function chunkRange(doc: ArticleDoc, chunk: Chunk): Range | null {
   return block?.map ? block.map.range(chunk.start, chunk.end) : null;
 }
 
-function buildDoc(title: string, blocks: Block[]): ArticleDoc {
+function buildDoc(kind: ArticleDoc['kind'], title: string, blocks: Block[]): ArticleDoc {
   const chunks: Chunk[] = [];
   let speechChars = 0;
   blocks.forEach((block, b) => {
@@ -165,7 +166,7 @@ function buildDoc(title: string, blocks: Block[]): ArticleDoc {
       chunks.push({ index: chunks.length, block: b, start: block.start + s.start, end: block.start + s.end, display, speech });
     }
   });
-  return { title, blocks, chunks, speechChars };
+  return { kind, title, blocks, chunks, speechChars };
 }
 
 /**

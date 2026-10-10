@@ -5,7 +5,8 @@ import { TTS_PORT } from '@/lib/messages';
 import { WebAudioOut } from '@/lib/player/audio';
 import { PlaybackController } from '@/lib/player/controller';
 import { Highlighter } from '@/lib/player/highlight';
-import { PlayerBar } from '@/lib/player/ui';
+import { PlayerBar, type Notice } from '@/lib/player/ui';
+import { clearResume, getResume, pageKey, saveResume } from '@/lib/resume';
 import { base64ToBytes } from '@/lib/sarvam';
 import { SPEED_STEPS, getPrefs, modelItem, paceItem, prefsItem, voiceItem, type ReadingPrefs } from '@/lib/settings';
 import { type ArticleDoc, chunkRange, docFromSelection, extractArticle, isReaderable, locate } from '@/lib/text/extract';
@@ -53,6 +54,8 @@ class ReaderApp {
   private prefs: ReadingPrefs | null = null;
   private jumpMode = false;
   private announcedPlaying = false;
+  private notice: (Notice & { clearWhen: 'playing' | 'moved'; at: number }) | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private unwatch: (() => void)[] = [];
 
   constructor(private ctx: ContentScriptContext) {
@@ -69,6 +72,11 @@ class ReaderApp {
     this.controller.onChange((s) => {
       if (s.status === 'playing' && !this.announcedPlaying) send({ type: 'playing' });
       this.announcedPlaying = s.status === 'playing';
+      const n = this.notice;
+      if (n && ((n.clearWhen === 'playing' && s.status === 'playing') || (n.clearWhen === 'moved' && s.index > n.at + 1))) {
+        this.notice = null;
+      }
+      this.persistPosition();
       this.render();
     });
     this.controller.onChunk((i) => this.highlight(i));
@@ -105,6 +113,7 @@ class ReaderApp {
   }
 
   reset() {
+    this.notice = null;
     this.controller.stop();
     this.controller.load([]);
     this.doc = null;
@@ -144,18 +153,74 @@ class ReaderApp {
     this.render();
   }
 
-  private startArticle(from: number) {
+  private async startArticle(from: number) {
     if (!this.loadArticle()) {
       const sel = window.getSelection();
       const selDoc = sel && !sel.isCollapsed ? docFromSelection(sel) : null;
       if (selDoc?.chunks.length) {
         this.setDoc(selDoc);
-      } else {
-        this.showMessage("Couldn't find an article on this page. Select some text, right-click it and choose “Read aloud from here”.");
-        return;
+        return this.controller.play(0);
+      }
+      this.showMessage("Couldn't find an article on this page. Select some text, right-click it and choose “Read aloud from here”.");
+      return;
+    }
+    const doc = this.doc!;
+    const total = doc.chunks.length;
+
+    if (from === 0 && this.prefs?.resume) {
+      const saved = await getResume(pageKey());
+      if (saved && saved.total === total && saved.index > 0 && saved.index < total - 1) {
+        from = saved.index;
+        this.notice = {
+          text: `Continuing from sentence ${from + 1} of ${total}, where you stopped last time.`,
+          tone: 'info',
+          actions: [{ label: 'Start over', run: () => this.dismissNoticeAnd(() => this.controller.play(0)) }],
+          clearWhen: 'moved',
+          at: from,
+        };
       }
     }
+
+    const remaining = doc.chunks.slice(from).reduce((n, c) => n + c.speech.length, 0);
+    const limit = this.prefs?.confirmAboveChars ?? 0;
+    if (limit > 0 && remaining > limit) {
+      const minutes = Math.round(remaining / CHARS_PER_SEC / this.voice.pace / 60);
+      this.notice = {
+        text: `Long article: ~${minutes} min of audio, about ${formatInr(remaining)} to synthesise (already-cached sentences are free).`,
+        tone: 'attn',
+        actions: [
+          { label: 'Read it', run: () => this.dismissNoticeAnd(() => this.controller.play(from)) },
+          { label: 'Cancel', run: () => this.reset() },
+        ],
+        clearWhen: 'playing',
+        at: from,
+      };
+      this.controller.seek(from);
+      this.render();
+      return;
+    }
     this.controller.play(from);
+  }
+
+  private dismissNoticeAnd(fn: () => void) {
+    this.notice = null;
+    fn();
+    this.render();
+  }
+
+  /** Remember the position for articles (not ad-hoc selections), debounced. */
+  private persistPosition() {
+    const doc = this.doc;
+    if (doc?.kind !== 'article') return;
+    const { status, index, total } = this.controller.state;
+    if (status === 'idle' || !total) return;
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    const key = pageKey();
+    if (status === 'ended') {
+      void clearResume(key);
+      return;
+    }
+    this.saveTimer = setTimeout(() => void saveResume(key, index, total), 1000);
   }
 
   private readFromSelection() {
@@ -163,7 +228,7 @@ class ReaderApp {
     if (!sel || sel.isCollapsed || !sel.rangeCount) return this.startArticle(0);
     const range = sel.getRangeAt(0);
     // Prefer continuing through the whole article from the selected sentence.
-    if (!this.doc || this.doc.title === 'Selection') this.loadArticle();
+    if (this.doc?.kind !== 'article') this.loadArticle();
     const idx = this.doc ? locate(this.doc, range.startContainer, range.startOffset) : -1;
     if (idx >= 0) return this.controller.play(idx);
     const selDoc = docFromSelection(sel);
@@ -309,8 +374,23 @@ class ReaderApp {
     const state = this.controller.state;
     const remainingChars = doc ? doc.chunks.slice(state.index).reduce((n, c) => n + c.speech.length, 0) : 0;
     const minutes = (doc?.speechChars ?? 0) / CHARS_PER_SEC / this.voice.pace / 60;
+    const notice: Notice | null =
+      this.notice ??
+      (state.status === 'error'
+        ? {
+            text: state.error ?? 'Something went wrong.',
+            tone: 'err',
+            actions: [
+              { label: 'Retry', run: () => this.controller.play() },
+              ...(/key|settings|credit/i.test(state.error ?? '')
+                ? [{ label: 'Open settings', run: () => send({ type: 'open-options' }) }]
+                : []),
+            ],
+          }
+        : null);
     return {
       title: doc?.title || document.title || 'Read Aloud',
+      notice,
       state,
       chunkText: (i: number) => doc?.chunks[i]?.display ?? '',
       summary: doc

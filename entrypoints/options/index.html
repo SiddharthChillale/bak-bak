@@ -51,6 +51,12 @@
             <input id="prefetch" type="number" min="0" max="5" step="1" />
           </label>
         </div>
+        <div class="grid">
+          <label>Ask before reading articles longer than (characters, 0 = never)
+            <input id="confirmAboveChars" type="number" min="0" max="500000" step="1000" />
+          </label>
+        </div>
+        <label class="check"><input id="resume" type="checkbox" /> Continue where I stopped when I reopen an article</label>
         <label class="check"><input id="autoscroll" type="checkbox" /> Scroll to follow the sentence being read</label>
         <label class="check"><input id="skipCode" type="checkbox" /> Skip code blocks</label>
         <label class="check"><input id="skipTables" type="checkbox" /> Skip tables</label>

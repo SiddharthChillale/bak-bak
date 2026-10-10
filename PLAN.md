@@ -1,6 +1,6 @@
 # Web Read-Aloud Extension — Plan (v2)
 
-Status: Phase 1 (MVP) implemented · Phase 0 notes in docs/phase0-spike.md · revised 2026-10-10
+Status: Phases 1–2 implemented (Safari packaging script untested: no Xcode on the dev machine) · Phase 0 notes in docs/phase0-spike.md · revised 2026-10-10
 
 ## 1. Scope
 

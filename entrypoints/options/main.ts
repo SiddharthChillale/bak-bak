@@ -31,6 +31,8 @@ const prefInputs = {
   sentencePauseMs: $<HTMLInputElement>('sentencePauseMs'),
   paragraphPauseMs: $<HTMLInputElement>('paragraphPauseMs'),
   prefetch: $<HTMLInputElement>('prefetch'),
+  confirmAboveChars: $<HTMLInputElement>('confirmAboveChars'),
+  resume: $<HTMLInputElement>('resume'),
   autoscroll: $<HTMLInputElement>('autoscroll'),
   skipCode: $<HTMLInputElement>('skipCode'),
   skipTables: $<HTMLInputElement>('skipTables'),
@@ -69,6 +71,8 @@ async function load() {
   prefInputs.sentencePauseMs.value = String(prefs.sentencePauseMs);
   prefInputs.paragraphPauseMs.value = String(prefs.paragraphPauseMs);
   prefInputs.prefetch.value = String(prefs.prefetch);
+  prefInputs.confirmAboveChars.value = String(prefs.confirmAboveChars);
+  prefInputs.resume.checked = prefs.resume;
   prefInputs.autoscroll.checked = prefs.autoscroll;
   prefInputs.skipCode.checked = prefs.skipCode;
   prefInputs.skipTables.checked = prefs.skipTables;
@@ -85,6 +89,8 @@ async function save() {
     sentencePauseMs: num(prefInputs.sentencePauseMs, 0, 2000, 150),
     paragraphPauseMs: num(prefInputs.paragraphPauseMs, 0, 3000, 450),
     prefetch: Math.round(num(prefInputs.prefetch, 0, 5, 2)),
+    confirmAboveChars: Math.round(num(prefInputs.confirmAboveChars, 0, 500_000, 30_000)),
+    resume: prefInputs.resume.checked,
     autoscroll: prefInputs.autoscroll.checked,
     skipCode: prefInputs.skipCode.checked,
     skipTables: prefInputs.skipTables.checked,

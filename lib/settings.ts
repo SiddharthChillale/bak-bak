@@ -29,6 +29,10 @@ export interface ReadingPrefs {
   /** Sentences synthesised ahead of the one playing. */
   prefetch: number;
   autoscroll: boolean;
+  /** Ask before reading an article longer than this many characters (0 = never ask). */
+  confirmAboveChars: number;
+  /** Continue from the last position when reopening an article. */
+  resume: boolean;
 }
 
 export const DEFAULT_PREFS: ReadingPrefs = {
@@ -38,6 +42,8 @@ export const DEFAULT_PREFS: ReadingPrefs = {
   skipTables: true,
   prefetch: 2,
   autoscroll: true,
+  confirmAboveChars: 30_000,
+  resume: true,
 };
 
 export const prefsItem = storage.defineItem<ReadingPrefs>('local:prefs', { fallback: DEFAULT_PREFS });

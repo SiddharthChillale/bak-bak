@@ -3,8 +3,16 @@
 import { prettyVoice } from '../voices';
 import type { PlayerState } from './controller';
 
+export interface Notice {
+  text: string;
+  tone: 'info' | 'attn' | 'err';
+  actions: { label: string; run: () => void }[];
+}
+
 export interface PlayerView {
   title: string;
+  /** Overrides the "now reading" line, with optional action buttons. */
+  notice?: Notice | null;
   state: PlayerState;
   /** Display text of chunk i (for the "now reading" line and seek preview). */
   chunkText(i: number): string;
@@ -74,7 +82,11 @@ const CSS_TEXT = `
 .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
 .now.err { color: var(--err); white-space: normal; }
-.now.attn { color: var(--accent); font-weight: 600; }
+.now.attn { color: var(--accent); font-weight: 600; white-space: normal; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.actions:empty { display: none; }
+.actions button { width: auto; height: auto; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
+.actions button:first-child { border-color: var(--accent); color: var(--accent); }
 button, select {
   font: inherit; color: inherit; background: transparent; border: 0; border-radius: 8px; cursor: pointer;
 }
@@ -125,6 +137,7 @@ export class PlayerBar {
           <div class="meta">
             <div class="title" data-el="title"></div>
             <div class="now" data-el="now" aria-live="polite"></div>
+            <div class="actions" data-el="actions"></div>
           </div>
           <button data-act="minimize" aria-label="Minimize player" title="Minimize">${icon('minimize')}</button>
           <button data-act="close" aria-label="Stop and close" title="Stop and close">${icon('close')}</button>
@@ -231,7 +244,19 @@ export class PlayerBar {
 
     const now = this.els.now!;
     now.className = 'now';
-    if (state.status === 'error') {
+    const actions = this.els.actions!;
+    actions.replaceChildren(
+      ...(v.notice?.actions ?? []).map((a) => {
+        const b = document.createElement('button');
+        b.textContent = a.label;
+        b.addEventListener('click', a.run);
+        return b;
+      }),
+    );
+    if (v.notice) {
+      if (v.notice.tone !== 'info') now.classList.add(v.notice.tone);
+      now.textContent = v.notice.text;
+    } else if (state.status === 'error') {
       now.classList.add('err');
       now.textContent = `${state.error ?? 'Something went wrong.'} Press ▶ to retry.`;
     } else if (state.status === 'blocked') {

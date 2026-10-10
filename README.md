@@ -9,7 +9,8 @@ Indian-English voices from [Sarvam AI](https://www.sarvam.ai/) (Bulbul).
   or drag the progress bar.
 - Controls: play/pause, previous/next sentence, previous/next paragraph, speed, voice.
 - Audio is cached locally (IndexedDB), so replaying or going back never costs credits twice; the settings page
-  shows estimated monthly spend.
+  shows estimated monthly spend, and long articles ask before starting (threshold configurable).
+- Remembers where you stopped on each article and continues from there (with a *Start over* option).
 
 See [PLAN.md](PLAN.md) for the design and roadmap.
 
@@ -34,6 +35,7 @@ pnpm build:safari     # → .output/safari-mv3
 - **Chrome**: `chrome://extensions` → Developer mode → *Load unpacked* → `.output/chrome-mv3`.
 - **Firefox**: `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* → `.output/firefox-mv3/manifest.json`.
 - **Safari 26**: Settings → Developer → *Add Temporary Extension…* → `.output/safari-mv3` (re-add after restarting Safari).
+  To keep it installed, `pnpm package:safari` wraps it in a macOS app (needs full Xcode; see the script header).
 
 Then open the extension's settings, paste your Sarvam API key and pick a voice.
 
