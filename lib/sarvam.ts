@@ -5,6 +5,8 @@ export const SARVAM_BASE_URL = 'https://api.sarvam.ai';
 
 export type SarvamModel = 'bulbul:v4-flash' | 'bulbul:v3';
 export type Transport = 'rest' | 'stream';
+export type LanguageCode =
+  | 'en-IN' | 'hi-IN' | 'bn-IN' | 'gu-IN' | 'kn-IN' | 'ml-IN' | 'mr-IN' | 'od-IN' | 'pa-IN' | 'ta-IN' | 'te-IN';
 
 export interface SynthRequest {
   text: string;
@@ -13,7 +15,7 @@ export interface SynthRequest {
   transport: Transport;
   pace?: number;
   temperature?: number;
-  languageCode?: string;
+  languageCode?: LanguageCode;
   sampleRate?: 8000 | 16000 | 22050 | 24000;
 }
 
