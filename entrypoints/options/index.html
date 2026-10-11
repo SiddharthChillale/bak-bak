@@ -56,6 +56,11 @@
             <input id="confirmAboveChars" type="number" min="0" max="500000" step="1000" />
           </label>
         </div>
+        <label class="check"><input id="autoDetect" type="checkbox" /> Detect articles automatically on every site</label>
+        <p class="hint">Off by default: the extension only runs on a page when you click its button, use its menu or a
+          shortcut. Turning this on asks your browser for access to all sites so it can mark readable pages with a dot on
+          the toolbar icon and let you Alt+click a sentence before opening the player. Page text is still only sent to
+          Sarvam when you press play.</p>
         <label class="check"><input id="resume" type="checkbox" /> Continue where I stopped when I reopen an article</label>
         <label class="check"><input id="autoscroll" type="checkbox" /> Scroll to follow the sentence being read</label>
         <label class="check"><input id="skipCode" type="checkbox" /> Skip code blocks</label>

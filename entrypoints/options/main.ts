@@ -1,8 +1,11 @@
+import { browser } from '#imports';
 import { cacheClear, cacheStats, evict } from '@/lib/cache';
+import { ALL_SITES } from '@/lib/inject';
 import { synthesize, type SarvamModel, type SynthResult, type Transport } from '@/lib/sarvam';
 import {
   SPEED_STEPS,
   apiKeyItem,
+  autoDetectItem,
   cacheLimitMbItem,
   getPodcastPrefs,
   getPrefs,
@@ -87,6 +90,30 @@ async function savePodcast() {
 
 for (const el of [podcastLength, hostA, hostB]) el.addEventListener('change', savePodcast);
 
+const autoDetect = $<HTMLInputElement>('autoDetect');
+
+async function refreshAutoDetect() {
+  const granted = await browser.permissions.contains(ALL_SITES).catch(() => false);
+  autoDetect.checked = granted && (await autoDetectItem.getValue());
+}
+
+autoDetect.addEventListener('change', async () => {
+  if (autoDetect.checked) {
+    // Must run inside the click: browsers only show the permission prompt for a user gesture.
+    const granted = await browser.permissions.request(ALL_SITES).catch(() => false);
+    await autoDetectItem.setValue(granted);
+    saved.textContent = granted
+      ? 'Article detection is on. It applies to pages you open or reload from now on.'
+      : 'Permission was not granted, so article detection stays off.';
+  } else {
+    await autoDetectItem.setValue(false);
+    await browser.permissions.remove(ALL_SITES).catch(() => false);
+    saved.textContent = 'Article detection is off.';
+  }
+  await refreshAutoDetect();
+});
+browser.permissions.onRemoved?.addListener(() => void refreshAutoDetect());
+
 async function load() {
   apiKey.value = await apiKeyItem.getValue();
   model.value = await modelItem.getValue();
@@ -105,6 +132,7 @@ async function load() {
   prefInputs.skipTables.checked = prefs.skipTables;
   cacheLimit.value = String(await cacheLimitMbItem.getValue());
   await fillHosts();
+  await refreshAutoDetect();
   updateCost();
   void refreshStats();
 }

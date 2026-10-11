@@ -4,7 +4,8 @@ import type { PlayerCommand, ToBackground, ToContent, TtsPortRequest, TtsPortRes
 import { TTS_PORT } from '@/lib/messages';
 import { generateScript, type PodcastScript, type ScriptRequest } from '@/lib/podcast';
 import { SarvamError, bytesToBase64, synthesize } from '@/lib/sarvam';
-import { apiKeyItem, cacheLimitMbItem, transportItem } from '@/lib/settings';
+import { ensureInjected, syncAutoDetect } from '@/lib/inject';
+import { apiKeyItem, autoDetectItem, cacheLimitMbItem, transportItem } from '@/lib/settings';
 import { recordUsage } from '@/lib/usage';
 
 const MENU_READ_PAGE = 'read-page';
@@ -23,12 +24,19 @@ export default defineBackground(() => {
     });
   });
 
-  browser.action.onClicked.addListener((tab) => sendCommand(tab.id, 'toggle'));
+  // Opt-in article detection: keep the all-sites content script in step with the setting
+  // and the permission (the user can revoke it from the browser's extension settings).
+  void syncAutoDetect();
+  autoDetectItem.watch(() => void syncAutoDetect());
+  browser.permissions.onAdded.addListener(() => void syncAutoDetect());
+  browser.permissions.onRemoved.addListener(() => void syncAutoDetect());
+
+  browser.action.onClicked.addListener((tab) => void sendCommand(tab.id, 'toggle'));
 
   browser.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === MENU_READ_PAGE) sendCommand(tab?.id, 'read-page');
-    if (info.menuItemId === MENU_READ_FROM_HERE) sendCommand(tab?.id, 'read-from-selection');
-    if (info.menuItemId === MENU_PODCAST) sendCommand(tab?.id, 'podcast');
+    if (info.menuItemId === MENU_READ_PAGE) void sendCommand(tab?.id, 'read-page');
+    if (info.menuItemId === MENU_READ_FROM_HERE) void sendCommand(tab?.id, 'read-from-selection');
+    if (info.menuItemId === MENU_PODCAST) void sendCommand(tab?.id, 'podcast');
   });
 
   browser.commands.onCommand.addListener(async (command, tab) => {
@@ -36,7 +44,7 @@ export default defineBackground(() => {
     const cmd = map[command];
     if (!cmd) return;
     const tabId = tab?.id ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]?.id;
-    sendCommand(tabId, cmd);
+    void sendCommand(tabId, cmd);
   });
 
   let playingTab: number | undefined;
@@ -46,7 +54,7 @@ export default defineBackground(() => {
     const tabId = sender.tab?.id;
     if (msg.type === 'readerable' && tabId != null) setBadge(tabId, msg.value);
     if (msg.type === 'playing' && tabId != null) {
-      if (playingTab != null && playingTab !== tabId) sendCommand(playingTab, 'pause');
+      if (playingTab != null && playingTab !== tabId) notifyTab(playingTab, 'pause');
       playingTab = tabId;
     }
     if (msg.type === 'open-options') void browser.runtime.openOptionsPage();
@@ -57,12 +65,16 @@ export default defineBackground(() => {
   });
 });
 
-function sendCommand(tabId: number | undefined, command: PlayerCommand) {
+/** A user action on a tab (activeTab is granted): inject the content script if needed, then send. */
+async function sendCommand(tabId: number | undefined, command: PlayerCommand) {
   if (tabId == null) return;
-  browser.tabs
-    .sendMessage(tabId, { type: 'command', command } satisfies ToContent)
-    // No content script (browser pages, store pages, or the tab predates the install).
-    .catch(() => undefined);
+  if (!(await ensureInjected(tabId))) return;
+  notifyTab(tabId, command);
+}
+
+/** Message a tab that may or may not have the content script; no injection. */
+function notifyTab(tabId: number, command: PlayerCommand) {
+  browser.tabs.sendMessage(tabId, { type: 'command', command } satisfies ToContent).catch(() => undefined);
 }
 
 function setBadge(tabId: number, readerable: boolean) {

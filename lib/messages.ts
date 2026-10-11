@@ -42,7 +42,10 @@ export type PlayerCommand =
   | 'pause';
 
 /** Background → content script via tabs.sendMessage. */
-export type ToContent = { type: 'command'; command: PlayerCommand };
+export type ToContent =
+  | { type: 'command'; command: PlayerCommand }
+  /** Is the content script already in this tab? (answered with 'pong') */
+  | { type: 'ping' };
 
 /** Content script / options page → background via runtime.sendMessage. */
 export type ToBackground =

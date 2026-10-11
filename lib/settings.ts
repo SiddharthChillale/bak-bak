@@ -77,3 +77,9 @@ export async function getPodcastPrefs(): Promise<PodcastPrefs> {
   const v = await podcastItem.getValue();
   return { ...DEFAULT_PODCAST, ...v, hosts: { ...DEFAULT_PODCAST.hosts, ...v.hosts } };
 }
+
+/**
+ * Opt-in: detect readable articles on every site (toolbar dot, Alt+click before opening the
+ * player). Needs the optional all-sites host permission; off by default.
+ */
+export const autoDetectItem = storage.defineItem<boolean>('local:autoDetect', { fallback: false });

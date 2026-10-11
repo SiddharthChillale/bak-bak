@@ -8,8 +8,11 @@ export default defineConfig({
     name: 'Read Aloud (Sarvam)',
     description: 'Read web articles aloud with natural Indian-English voices from Sarvam AI.',
     action: { default_title: 'Read Aloud' },
-    permissions: ['storage', 'contextMenus'],
+    // activeTab + scripting: the extension only touches a page when the user invokes it
+    // (toolbar button, context menu, shortcut). Site-wide article detection is opt-in.
+    permissions: ['storage', 'contextMenus', 'activeTab', 'scripting'],
     host_permissions: ['https://api.sarvam.ai/*'],
+    optional_host_permissions: ['<all_urls>'],
     commands: {
       'toggle-reading': {
         suggested_key: { default: 'Alt+Shift+R' },
@@ -41,9 +44,12 @@ export default defineConfig({
     sourcesTemplate: 'read-aloud-sarvam-{{version}}-sources.zip',
   },
   hooks: {
-    // Safari 26 can't open a debugger for a service-worker background, and
-    // non-persistent background scripts are its default anyway.
     'build:manifestGenerated': (wxt, manifest) => {
+      // The content script is injected on demand (registration: 'runtime'), so WXT adds its
+      // `<all_urls>` match to host_permissions; it belongs in optional_host_permissions only.
+      manifest.host_permissions = manifest.host_permissions?.filter((p: string) => p !== '<all_urls>');
+      // Safari 26 can't open a debugger for a service-worker background, and
+      // non-persistent background scripts are its default anyway.
       if (wxt.config.browser === 'safari' && manifest.background && 'service_worker' in manifest.background) {
         manifest.background = { scripts: [manifest.background.service_worker], persistent: false };
       }

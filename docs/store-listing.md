@@ -29,10 +29,13 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 - **Single purpose:** Read web page text aloud using Sarvam AI text-to-speech.
 - **Permission justifications:**
   - `storage`: save settings, the user's API key, reading positions and usage counters locally.
-  - `contextMenus`: "Read aloud from here", "Read this page aloud" and "Turn this page into a podcast" menu items.
+  - `contextMenus`: "Read this page aloud", "Read aloud from here" and "Make a podcast from this page…" menu items.
+  - `activeTab` + `scripting`: when the user clicks the toolbar button, a menu item or a shortcut, inject the player
+    into that tab to extract the article, highlight the sentence being read and show the player.
   - Host permission `https://api.sarvam.ai/*`: send text to Sarvam's TTS and chat APIs.
-  - Content script on all sites: detect readable articles (badge), extract text, highlight the sentence being read,
-    and show the player. Runs locally; nothing is sent until the user starts reading.
+  - Optional host permission `<all_urls>` (off by default, requested only if the user enables "Detect articles
+    automatically" in Settings): mark readable pages with a dot on the toolbar icon. Runs locally; nothing is sent
+    until the user presses play.
 - **Data usage disclosure:** "Website content" is collected (page text sent to Sarvam AI to synthesise speech).
   Not sold, not used for unrelated purposes, not used for creditworthiness. Privacy policy: PRIVACY.md (host it at
   a public URL before submitting).
@@ -55,9 +58,8 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 
 1. **Who pays for Sarvam.** Today each user brings their own API key (BYOK). A hosted proxy with your key would
    need sign-in, quotas and billing, and the privacy policy would change (text would pass through your server).
-2. **Permission breadth.** The content script runs on all sites to show the "article detected" badge. Switching to
-   `activeTab` + `scripting` (inject on click) removes the "read and change all your data on all websites" install
-   warning, at the cost of the automatic badge and Alt+click before opening the player.
+2. ~~**Permission breadth.**~~ Done (2026-10-11): the extension uses `activeTab` + `scripting` and runs only when
+   invoked; site-wide article detection is an opt-in setting with an optional permission.
 3. **Listing assets.** Screenshots (1280×800), a promo tile (440×280) and a hosted privacy-policy URL.
 4. **Name/branding.** Using "Sarvam" in the name may need Sarvam AI's permission; consider a neutral name with
    "Powered by Sarvam AI" in the description.

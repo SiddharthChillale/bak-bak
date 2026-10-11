@@ -1,6 +1,6 @@
 # Privacy policy: Read Aloud (Sarvam)
 
-_Last updated: 10 October 2026_
+_Last updated: 11 October 2026_
 
 Read Aloud reads web pages aloud using Sarvam AI's text-to-speech service. This policy explains what data the
 extension handles.
@@ -12,8 +12,17 @@ extension handles.
   also sends the article text to Sarvam AI's language model to write the conversation script.
 - **Your Sarvam API key** is sent to Sarvam AI with each request, as Sarvam requires.
 
-Nothing is sent until you start reading. Pages you merely visit are analysed locally (to show the "article
-detected" badge) and are not transmitted.
+Nothing is sent until you start reading.
+
+## When the extension can see a page
+
+By default the extension can only access a page after you invoke it there: by clicking its toolbar button,
+choosing one of its right-click menu items, or using one of its keyboard shortcuts. It cannot read other pages.
+
+If you turn on **Detect articles automatically** in Settings, your browser will ask you to allow access to all
+sites. The extension then checks each page locally to show a "readable article" dot on its icon. That check
+happens in your browser; nothing is transmitted unless you press play. You can turn this off at any time in
+Settings or in your browser's extension settings.
 
 Sarvam AI processes this data under its own terms and privacy policy: https://www.sarvam.ai/privacy-policy
 
@@ -35,4 +44,4 @@ advertising identifiers.
 
 ## Contact
 
-Questions: <contact email to fill in before publishing>
+Questions or requests: sidcp.work@gmail.com

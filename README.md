@@ -29,12 +29,11 @@ Want a different take? Switch to **Podcast** mode and two hosts of your choosing
 ## Highlights
 
 - **Reads the article, not the page.** Finds the main story with Mozilla Readability (the engine behind Firefox
-  Reader View) and skips navigation, ads, code blocks and tables. A dot on the toolbar icon tells you a page is
-  readable.
+  Reader View) and skips navigation, ads, code blocks and tables.
 - **Follow along.** The sentence being read is highlighted in place and the page scrolls with it, staying clear
   of sticky headers and the player.
 - **Jump to any line.** Press **Jump to**, scroll anywhere, and click a line: reading starts from the beginning of
-  that sentence. Alt+click works anytime, as does selecting text → *Read aloud from here*.
+  that sentence. Alt+click a sentence once the player is open, or select text → *Read aloud from here*.
 - **Natural Indian-English voices.** 60+ Bulbul v4 voices (narration, audiobook, conversational…) plus the
   classic v3 speakers, with speed from 0.75× to 2×.
 - **Podcast mode, on your terms.** Pick two hosts (▶ previews each voice), press **Write script** to have
@@ -46,6 +45,8 @@ Want a different take? Switch to **Podcast** mode and two hosts of your choosing
   over* option.
 - **Stays out of the way.** The player docks bottom-right, clear of centred article text, and collapses to a
   small pill.
+- **Only runs when you ask.** It touches a page only when you click its button, menu or shortcut. Want a dot on
+  the toolbar icon for readable pages? Turn on *Detect articles automatically* in Settings (opt-in).
 - **Works on strict sites.** Audio plays through Web Audio, so sites with tight security policies (AWS, GitHub…)
   don't block playback.
 
@@ -72,7 +73,7 @@ Chrome Web Store, Firefox Add-ons and Mac App Store listings are planned.
 | Read the article / play-pause | Toolbar button or `Alt+Shift+R` |
 | Next / previous sentence | `Alt+Shift+.` / `Alt+Shift+,` or the player buttons |
 | Next / previous paragraph | ⏭ / ⏮ on the player |
-| Start from a particular line | **Jump to**, then click the line (Esc cancels) · or Alt+click it |
+| Start from a particular line | **Jump to**, then click the line (Esc cancels) · or Alt+click it while the player is open |
 | Read only a selection | Select text → right-click → *Read aloud from here* |
 | Make a podcast | **Podcast** switch → choose two hosts → **Write script** → **Generate audio** |
 | Back to reading the page | **Read** switch |
@@ -93,7 +94,7 @@ Cached sentences are free to replay. The Settings page shows your estimated spen
 
 ## Privacy
 
-Nothing leaves your browser until you press play. Then only the text being read is sent to Sarvam AI for speech
+The extension only sees a page after you invoke it there, and nothing leaves your browser until you press play. Then only the text being read is sent to Sarvam AI for speech
 (and, in podcast mode, to write the script). Your key, settings, cached audio and reading positions stay in your
 browser's extension storage. There's no server, analytics or tracking. See [PRIVACY.md](PRIVACY.md).
 

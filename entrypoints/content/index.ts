@@ -39,13 +39,26 @@ const CHARS_PER_SEC = 15;
 const SCRIPT_COST_TEXT = 'about ₹0.25';
 
 export default defineContentScript({
+  // Injected by the background when the user invokes the extension (activeTab), or
+  // registered on all sites only if the user opts in to automatic article detection.
+  registration: 'runtime',
   matches: ['<all_urls>'],
   runAt: 'document_idle',
   main(ctx) {
+    // Both routes can inject into the same tab: run once, unless the earlier copy belongs to
+    // an extension version that has since been reloaded or updated (its context is invalid).
+    const w = window as Window & { __readAloudCtx?: ContentScriptContext };
+    if (w.__readAloudCtx?.isValid) return;
+    w.__readAloudCtx = ctx;
+
     const app = new ReaderApp(ctx);
 
-    browser.runtime.onMessage.addListener((raw) => {
+    browser.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
       const msg = raw as ToContent;
+      if (msg.type === 'ping') {
+        sendResponse('pong');
+        return;
+      }
       if (msg.type === 'command') void app.command(msg.command);
     });
 
