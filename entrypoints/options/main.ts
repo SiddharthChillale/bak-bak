@@ -44,6 +44,8 @@ const prefInputs = {
   autoscroll: $<HTMLInputElement>('autoscroll'),
   skipCode: $<HTMLInputElement>('skipCode'),
   skipTables: $<HTMLInputElement>('skipTables'),
+  skipEmbeds: $<HTMLInputElement>('skipEmbeds'),
+  skipCaptions: $<HTMLInputElement>('skipCaptions'),
 };
 
 let current: HTMLAudioElement | null = null;
@@ -130,6 +132,8 @@ async function load() {
   prefInputs.autoscroll.checked = prefs.autoscroll;
   prefInputs.skipCode.checked = prefs.skipCode;
   prefInputs.skipTables.checked = prefs.skipTables;
+  prefInputs.skipEmbeds.checked = prefs.skipEmbeds;
+  prefInputs.skipCaptions.checked = prefs.skipCaptions;
   cacheLimit.value = String(await cacheLimitMbItem.getValue());
   await fillHosts();
   await refreshAutoDetect();
@@ -150,6 +154,8 @@ async function save() {
     autoscroll: prefInputs.autoscroll.checked,
     skipCode: prefInputs.skipCode.checked,
     skipTables: prefInputs.skipTables.checked,
+    skipEmbeds: prefInputs.skipEmbeds.checked,
+    skipCaptions: prefInputs.skipCaptions.checked,
   };
   await Promise.all([
     apiKeyItem.setValue(apiKey.value.trim()),

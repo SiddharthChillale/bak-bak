@@ -473,6 +473,8 @@ class ReaderApp {
     const doc = extractArticle(document, {
       skipCode: this.prefs?.skipCode ?? true,
       skipTables: this.prefs?.skipTables ?? true,
+      skipEmbeds: this.prefs?.skipEmbeds ?? true,
+      skipCaptions: this.prefs?.skipCaptions ?? false,
       exclude: this.ui ? [this.ui.host] : [],
     });
     return doc?.chunks.length ? doc : null;

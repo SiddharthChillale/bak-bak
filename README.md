@@ -29,7 +29,7 @@ Want a different take? Switch to **Podcast** mode and two hosts of your choosing
 ## Highlights
 
 - **Reads the article, not the page.** Finds the main story with Mozilla Readability (the engine behind Firefox
-  Reader View) and skips navigation, ads, code blocks and tables.
+  Reader View) and skips navigation, ads, code blocks, tables and link-preview cards.
 - **Follow along.** The sentence being read is highlighted in place and the page scrolls with it, staying clear
   of sticky headers and the player.
 - **Jump to any line.** Press **Jump to**, scroll anywhere, and click a line: reading starts from the beginning of

@@ -39,6 +39,9 @@ export interface ArticleDoc {
 export interface ExtractOptions {
   skipCode: boolean;
   skipTables: boolean;
+  /** Link-preview cards and social embeds: another page's headline, summary and domain. */
+  skipEmbeds: boolean;
+  skipCaptions: boolean;
   /** Elements to leave out of the clone Readability sees (e.g. our own UI host). */
   exclude?: Element[];
 }
@@ -46,6 +49,23 @@ export interface ExtractOptions {
 const ID_ATTR = 'data-readaloud-id';
 const BLOCK_TAGS = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote', 'pre', 'figcaption', 'dt', 'dd', 'td', 'th', 'div'];
 const BLOCK_SELECTOR = BLOCK_TAGS.join(',');
+
+/** A link to another page (not an in-page anchor like a heading permalink). */
+const OUTBOUND_LINK = 'a[href]:not([href^="#"])';
+/** Embed containers that aren't a single link, or whose script hasn't replaced them yet. */
+const EMBED_SELECTOR = [
+  '.embedded-post-wrap', // Substack
+  '.kg-bookmark-card', // Ghost
+  '.wp-block-embed', // WordPress
+  'blockquote.twitter-tweet',
+  'blockquote.instagram-media',
+  'blockquote.tiktok-embed',
+  'blockquote.reddit-embed-bq',
+  'blockquote.bluesky-embed',
+].join(',');
+/** Short blocks that are mostly link text ("Related: …", a bare URL) count as embeds too. */
+const LINK_ONLY_MAX_CHARS = 200;
+const LINK_ONLY_DENSITY = 0.8;
 
 export function isReaderable(doc: Document = document): boolean {
   try {
@@ -67,7 +87,9 @@ export function extractArticle(doc: Document, opts: ExtractOptions): ArticleDoc 
   for (const leaf of leafBlocks(root)) {
     if (opts.skipCode && leaf.closest('pre, code')) continue;
     if (opts.skipTables && leaf.closest('table')) continue;
+    if (opts.skipCaptions && leaf.closest('figcaption')) continue;
     const heading = /^H[1-6]$/.test(leaf.tagName.toUpperCase());
+    if (opts.skipEmbeds && isEmbed(leaf, heading, originals)) continue;
 
     const ownId = leaf.getAttribute(ID_ATTR);
     const own = ownId != null ? originals[Number(ownId)] : undefined;
@@ -204,6 +226,26 @@ function tagClone(doc: Document, exclude: Element[]): { clone: Document; origina
     if (i >= 0 && i < n) copies[i]!.remove();
   }
   return { clone, originals };
+}
+
+/**
+ * Link-preview cards (Medium, Substack, Ghost…) wrap a whole headline/summary/domain
+ * block in one link, whereas an inline link sits *inside* a paragraph. So a block with
+ * an outbound-link ancestor is a card. Checked on the live element too, in case
+ * Readability dropped the wrapper.
+ */
+function isEmbed(leaf: Element, heading: boolean, originals: Element[]): boolean {
+  const tagged = leaf.closest(`[${ID_ATTR}]`);
+  const live = tagged ? originals[Number(tagged.getAttribute(ID_ATTR))] : undefined;
+  const sel = `${OUTBOUND_LINK},${EMBED_SELECTOR}`;
+  if (leaf.closest(sel) || live?.closest(sel)) return true;
+
+  if (heading || leaf.closest('li')) return false;
+  const text = normalize(leaf.textContent ?? '');
+  if (!text || text.length > LINK_ONLY_MAX_CHARS) return false;
+  let linked = 0;
+  for (const a of leaf.querySelectorAll(OUTBOUND_LINK)) linked += normalize(a.textContent ?? '').length;
+  return linked / text.length >= LINK_ONLY_DENSITY;
 }
 
 function* leafBlocks(root: Element): Generator<Element> {

@@ -27,6 +27,9 @@ export interface ReadingPrefs {
   paragraphPauseMs: number;
   skipCode: boolean;
   skipTables: boolean;
+  /** Link-preview cards and social embeds inside the article. */
+  skipEmbeds: boolean;
+  skipCaptions: boolean;
   /** Sentences synthesised ahead of the one playing. */
   prefetch: number;
   autoscroll: boolean;
@@ -41,6 +44,8 @@ export const DEFAULT_PREFS: ReadingPrefs = {
   paragraphPauseMs: 450,
   skipCode: true,
   skipTables: true,
+  skipEmbeds: true,
+  skipCaptions: false,
   prefetch: 2,
   autoscroll: true,
   confirmAboveChars: 30_000,
