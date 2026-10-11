@@ -3,6 +3,7 @@
 
 import type { SummaryLength } from '../summary';
 import { prettyVoice } from '../voices';
+import { loadPlayerFonts } from './fonts';
 import type { PlayerState } from './controller';
 
 export interface Notice {
@@ -99,8 +100,6 @@ export interface PlayerHandlers {
   close(): void;
 }
 
-const MORE_VOICES = '__more__';
-
 const ICONS = {
   play: '<path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z"/>',
   pause: '<rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/>',
@@ -118,141 +117,306 @@ const ICONS = {
   close: '<path d="M6.3 6.3a1 1 0 0 1 1.4 0L12 10.6l4.3-4.3a1 1 0 1 1 1.4 1.4L13.4 12l4.3 4.3a1 1 0 0 1-1.4 1.4L12 13.4l-4.3 4.3a1 1 0 0 1-1.4-1.4l4.3-4.3-4.3-4.3a1 1 0 0 1 0-1.4Z"/>',
 };
 
+type Size = 'A' | 'B' | 'C';
+type Menu = null | 'pace' | 'voice' | 'hostA' | 'hostB';
+
+const MODES: PlayerMode[] = ['article', 'podcast', 'summary'];
+const TAB_LABEL: Record<PlayerMode, string> = { article: 'Reader', podcast: 'Podcast', summary: 'Summary' };
+const TAB_ICON: Record<PlayerMode, keyof typeof ICONS> = { article: 'read', podcast: 'podcast', summary: 'summary' };
+const PACE_WORDS = ['Slow', 'Relaxed', 'Natural', 'Steady', 'Brisk', 'Fast', 'Max'];
+
 const icon = (name: keyof typeof ICONS) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name]}</svg>`;
+const grip = '<span class="grip" data-drag aria-hidden="true">' + '<i></i>'.repeat(6) + '</span>';
+const playPause = `<span class="pp"><svg class="ic-pause" viewBox="0 0 24 24" aria-hidden="true">${ICONS.pause}</svg><svg class="ic-play" viewBox="0 0 24 24" aria-hidden="true">${ICONS.play}</svg></span>`;
+const short = (id: string) => prettyVoice(id).split(' · ')[0] ?? id;
 
 const CSS_TEXT = `
 :host { all: initial; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 .wrap {
-  --bg: #fffdf9; --fg: #1d1b19; --muted: #6f6a64; --line: #e7e1d8; --chip: #f4efe7;
-  --accent: #b4532a; --accent-fg: #fff; --err: #b3261e;
-  --bubble-left: #f1ece4; --bubble-right: #f6e3d8;
+  --solid: #fffdf9; --glass: rgba(255,253,249,.8); --fg: #1d1b19; --muted: #6f6a64; --faint: #a59f97;
+  --line: rgba(29,27,25,.12); --chip: rgba(29,27,25,.06); --chip-hover: rgba(29,27,25,.06);
+  --accent: #2790C4; --ink: #1d6f98; --soft: rgba(39,144,196,.14); --accent-fg: #fff; --err: #b3261e;
+  --left: rgba(29,27,25,.06); --right: rgba(39,144,196,.13); --hl: rgba(39,144,196,.18);
+  --ring: rgba(255,255,255,.55);
   position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
-  width: min(440px, calc(100vw - 32px));
-  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: "ReadAloud Sans", "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "ReadAloud Serif", Newsreader, Georgia, serif;
+  font: 13px/1.4 var(--sans);
   color: var(--fg); -webkit-font-smoothing: antialiased;
 }
 @media (prefers-color-scheme: dark) {
-  .wrap { --bg: #1f1d1b; --fg: #f2eee8; --muted: #a59f97; --line: #3a3632; --chip: #2b2825; --accent: #e8875c; --accent-fg: #1d1b19; --err: #ff8a80;
-    --bubble-left: #2c2926; --bubble-right: #3a2a22; }
+  .wrap { --solid: #2a2723; --glass: rgba(31,29,27,.82); --fg: #f2eee8; --muted: #a59f97; --faint: #77716a;
+    --line: rgba(255,255,255,.14); --chip: rgba(255,255,255,.09); --chip-hover: rgba(255,255,255,.09);
+    --ink: #6cc0ea; --soft: rgba(39,144,196,.3); --err: #ff8a80;
+    --left: rgba(255,255,255,.09); --right: rgba(39,144,196,.26); --hl: rgba(39,144,196,.35); --ring: rgba(255,255,255,.1); }
 }
-.bar {
-  background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0,0,0,.18), 0 2px 6px rgba(0,0,0,.08);
-  padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
-  /* Never taller than the window: the chat shrinks first, then the bar scrolls. */
-  max-height: calc(100vh - 32px); overflow: auto; overscroll-behavior: contain;
+button, select { font: inherit; color: inherit; border: 0; background: transparent; padding: 0; cursor: pointer; }
+button { display: inline-grid; place-items: center; border-radius: 50%; transition: transform .15s ease, background .15s ease, opacity .2s ease; }
+button:hover { background: var(--chip-hover); }
+button:active { transform: scale(.9); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button:disabled { opacity: .4; cursor: default; }
+svg { fill: currentColor; }
+
+.shell {
+  position: relative; overflow: hidden; transform-origin: 100% 100%;
+  background: var(--glass); -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid var(--ring);
+  box-shadow: 0 0 0 1px rgba(29,27,25,.08), 0 14px 36px rgba(29,27,25,.2), 0 2px 6px rgba(29,27,25,.08);
+  transition: width .5s cubic-bezier(.32,.72,0,1), height .5s cubic-bezier(.32,.72,0,1), border-radius .5s cubic-bezier(.32,.72,0,1);
 }
-/* Mode switch and window buttons on the first row; title and status get the full width below. */
-.top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.top .modes { margin-right: auto; }
-.meta { order: 1; flex: 1 0 100%; min-width: 0; }
-.title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.now { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 1.4em; }
-.now.err { color: var(--err); display: block; }
-.now.attn { color: var(--accent); font-weight: 600; display: block; }
-.actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-.actions:empty { display: none; }
-.actions button { width: auto; height: auto; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
-.actions button:first-child { border-color: var(--accent); color: var(--accent); }
-button, select {
-  font: inherit; color: inherit; background: transparent; border: 0; border-radius: 8px; cursor: pointer;
-}
-button { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; }
-button svg { width: 18px; height: 18px; fill: currentColor; }
-button:hover, select:hover { background: var(--chip); }
-button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-button.main { width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); }
-button.main:hover { filter: brightness(1.08); background: var(--accent); }
-button.main svg { width: 20px; height: 20px; }
-button.main.busy { animation: pulse 1.2s ease-in-out infinite; }
+.wrap[data-size="A"] .shell { width: 128px; height: 40px; border-radius: 20px; }
+.wrap[data-size="B"] .shell { width: 300px; height: 56px; border-radius: 28px; }
+.wrap[data-size="C"] .shell { width: min(340px, calc(100vw - 32px)); height: min(400px, calc(100vh - 32px)); border-radius: 22px; }
+.wrap.picking .shell { width: 300px; height: 40px; border-radius: 20px; }
+
+.layer { position: absolute; right: 0; bottom: 0; display: flex; opacity: 0; transform: scale(.96); pointer-events: none;
+  transition: opacity .22s ease, transform .35s cubic-bezier(.32,.72,0,1); }
+.wrap[data-size="A"] .la, .wrap[data-size="B"] .lb, .wrap[data-size="C"] .lc { opacity: 1; transform: none; pointer-events: auto; transition-delay: .14s; }
+.wrap.picking .layer { opacity: 0; pointer-events: none; transition-delay: 0s; }
+.wrap.picking .lp { opacity: 1; transform: none; pointer-events: auto; transition-delay: .14s; }
+
+.grip { display: grid; grid-template-columns: 3px 3px; gap: 2px; cursor: grab; color: var(--faint); padding: 4px 2px; touch-action: none; }
+.grip i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; }
+.grip:active { cursor: grabbing; }
+
+.pp { position: relative; width: 100%; height: 100%; display: block; }
+.pp svg { position: absolute; inset: 0; margin: auto; width: 46%; height: 46%; transition: opacity .2s ease, transform .35s cubic-bezier(.34,1.56,.64,1); }
+.ic-play { opacity: 1; transform: none; }
+.ic-pause { opacity: 0; transform: scale(.4) rotate(-90deg); }
+.wrap.playing .ic-play { opacity: 0; transform: scale(.4) rotate(90deg); }
+.wrap.playing .ic-pause { opacity: 1; transform: none; }
+.go { background: var(--accent); color: var(--accent-fg); }
+.go:hover { background: var(--accent); filter: brightness(1.07); }
+.go.busy { animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .65; } }
-.controls { display: flex; align-items: center; gap: 4px; }
-.transport { display: flex; align-items: center; gap: 2px; }
-.info { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; font-size: 12px; }
-.options { display: flex; align-items: center; gap: 6px; }
-.options select { flex: none; }
-select { padding: 6px 6px; background: var(--chip); max-width: 170px; }
-button.text { width: auto; padding: 0 10px 0 8px; gap: 5px; display: inline-flex; align-items: center; background: var(--chip); font-weight: 500; }
-button.text svg { width: 15px; height: 15px; }
-button.text[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
-.options .end { margin-left: auto; }
-.modes { display: inline-flex; gap: 2px; padding: 2px; background: var(--chip); border-radius: 999px; flex: none; }
-button.mode { width: auto; height: 28px; padding: 0 10px 0 8px; gap: 4px; display: inline-flex; align-items: center; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--muted); }
-button.mode svg { width: 15px; height: 15px; }
-button.mode:hover { background: transparent; color: var(--fg); }
-button.mode[aria-pressed="true"] { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
-.pod { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end;
-  border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
-.pod[hidden] { display: none; }
-.pod label { display: grid; gap: 3px; min-width: 0; font-size: 12px; color: var(--muted); }
-.pod .pick { display: flex; gap: 4px; align-items: center; min-width: 0; }
-.pod .pick select { flex: 1; width: 0; min-width: 0; max-width: none; }
-.pod .pick button { width: 28px; height: 28px; flex: none; }
-.pod .pick button svg { width: 14px; height: 14px; }
-.pod button:disabled { opacity: .4; cursor: default; }
-.pod > label:nth-of-type(3) select { width: 100%; max-width: none; }
-.sum { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end;
-  border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
-.sum[hidden] { display: none; }
-.sum label { display: grid; gap: 3px; min-width: 0; font-size: 12px; color: var(--muted); }
-.sum select { width: 100%; max-width: none; }
-button.primary { width: 100%; height: 34px; padding: 0 14px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-weight: 600; white-space: nowrap; }
-button.primary:hover { background: var(--accent); filter: brightness(1.08); }
-button.primary[aria-disabled="true"] { opacity: .5; cursor: default; filter: none; }
-button.primary.busy { animation: pulse 1.2s ease-in-out infinite; }
-.chat[hidden] { display: none; }
-.chat { display: grid; gap: 4px; }
-.chathead { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 4px; }
-.chathead span:last-child { text-align: right; }
-.transcript {
-  position: relative; max-height: clamp(140px, calc(100vh - 420px), 340px); overflow: auto; display: flex; flex-direction: column; gap: 6px;
-  padding: 22px 2px; scrollbar-width: thin;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 22px), transparent 100%);
-}
-.msg { all: unset; box-sizing: border-box; max-width: 82%; padding: 7px 11px; line-height: 1.45; cursor: pointer;
-  opacity: .62; transition: opacity .2s ease; }
-.msg.left { align-self: flex-start; background: var(--bubble-left); border-radius: 14px 14px 14px 4px; }
-.msg.right { align-self: flex-end; background: var(--bubble-right); border-radius: 14px 14px 4px 14px; }
-.msg.full { max-width: none; padding: 4px 8px; border-radius: 8px; }
-.msg.full.on { background: var(--bubble-left); }
+.ib { width: 32px; height: 32px; flex: none; color: inherit; }
+.ib svg { width: 18px; height: 18px; }
+.ib.sm { width: 28px; height: 28px; color: var(--muted); }
+.ib.sm svg { width: 16px; height: 16px; }
+.ib.fill { background: var(--chip); }
+
+/* A: tiny pill */
+.la { width: 128px; height: 40px; align-items: center; gap: 6px; padding: 0 6px 0 10px; }
+.la .go { width: 30px; height: 30px; flex: none; }
+.eq { flex: 1; display: flex; justify-content: center; align-items: center; gap: 2px; height: 14px; }
+.eq span { width: 3px; height: 14px; border-radius: 2px; background: var(--accent); opacity: .45; transform: scaleY(.3); transition: transform .3s ease, opacity .3s ease; }
+.wrap.playing .eq span { opacity: 1; transform: none; animation: eq .9s ease-in-out infinite; }
+.wrap.playing .eq span:nth-child(2) { animation-duration: .6s; animation-delay: -.2s; }
+.wrap.playing .eq span:nth-child(3) { animation-duration: 1.1s; animation-delay: -.4s; }
+.wrap.playing .eq span:nth-child(4) { animation-duration: .75s; animation-delay: -.6s; }
+@keyframes eq { 0%,100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+
+/* B: mini bar */
+.lb { width: 300px; height: 56px; align-items: center; gap: 2px; padding: 0 10px 0 14px; }
+.lb .grip { margin-right: 6px; }
+.lb .go { width: 40px; height: 40px; flex: none; }
+.vsep { width: 1px; height: 22px; background: var(--line); margin: 0 6px; flex: none; }
+.tabchip { height: 30px; flex: none; border-radius: 999px; background: var(--chip); display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; font-weight: 500; font-size: 12px; }
+.tabchip:hover { background: var(--soft); }
+.tabchip svg { width: 14px; height: 14px; fill: var(--accent); }
+.tabchip svg.caret { width: 12px; height: 12px; fill: var(--muted); transform: rotate(180deg); }
+.lb .fill { width: 38px; height: 38px; }
+.flex1 { flex: 1; }
+.xbtn { position: absolute; right: -10px; bottom: 43px; z-index: 2; width: 20px; height: 20px; border: 1.5px solid #fff; background: #e0392d; color: #fff;
+  box-shadow: 0 2px 8px rgba(224,57,45,.4); opacity: 0; transform: scale(0); pointer-events: none;
+  transition: opacity .18s ease, transform .45s cubic-bezier(.34,1.8,.64,1), background .15s ease; }
+.xbtn:hover { background: #c42a1f; }
+.xbtn svg { width: 12px; height: 12px; }
+.wrap[data-size="B"].hover:not(.picking) .xbtn { opacity: 1; transform: scale(1); pointer-events: auto; transition-delay: .35s, .35s, 0s; }
+
+/* picking */
+.lp { width: 300px; height: 40px; align-items: center; gap: 8px; padding: 0 6px 0 14px; font-weight: 600; color: var(--ink); }
+.lp span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* C: expanded */
+.lc { width: min(340px, calc(100vw - 32px)); height: min(400px, calc(100vh - 32px)); flex-direction: column; gap: 12px; padding: 12px; }
+.head { display: flex; align-items: center; gap: 8px; flex: none; }
+.head .grip { padding: 0 2px; }
+.head .ttl { flex: 1; min-width: 0; }
+.head .t1 { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.head .t2 { font-size: 11.5px; color: var(--muted); }
+.trow { display: flex; align-items: center; gap: 4px; flex: none; height: 46px; overflow: hidden; margin-bottom: 0;
+  transition: height .4s cubic-bezier(.32,.72,0,1), opacity .2s ease, margin .4s cubic-bezier(.32,.72,0,1); }
+.wrap[data-mode="podcast"] .trow { height: 0; opacity: 0; margin-bottom: -12px; pointer-events: none; }
+.trow .ib { width: 34px; height: 34px; }
+.trow .go { width: 46px; height: 46px; flex: none; box-shadow: 0 4px 12px rgba(39,144,196,.35); }
+.pill { height: 28px; border-radius: 999px; background: var(--chip); display: inline-flex; align-items: center; gap: 2px; padding: 0 6px 0 10px; font-weight: 500; font-size: 12px; max-width: 116px; }
+.pill:hover, .pill.on { background: var(--soft); }
+.pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill svg { width: 12px; height: 12px; flex: none; fill: var(--muted); transform: rotate(180deg); transition: transform .25s ease; }
+.pill.on svg { transform: none; }
+.stage { flex: 1; min-height: 0; position: relative; }
+.pane { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+  transition: opacity .22s ease, transform .4s cubic-bezier(.32,.72,0,1); }
+.pane.main { }
+.pane.menu { opacity: 0; transform: translateX(18px); pointer-events: none; }
+.wrap[data-menu="pace"] .pane.main, .wrap[data-menu="voice"] .pane.main, .wrap[data-menu="hostA"] .pane.main, .wrap[data-menu="hostB"] .pane.main
+  { opacity: 0; transform: translateX(-18px); pointer-events: none; }
+.wrap[data-menu="pace"] .pane.pacepane, .wrap[data-menu="voice"] .pane.voicepane, .wrap[data-menu="hostA"] .pane.voicepane, .wrap[data-menu="hostB"] .pane.voicepane
+  { opacity: 1; transform: none; pointer-events: auto; transition-delay: .08s; }
+
+.seg { position: relative; display: grid; padding: 3px; border-radius: 999px; background: var(--chip); flex: none; }
+.seg .thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; border-radius: 999px; background: var(--solid); box-shadow: 0 1px 3px rgba(0,0,0,.14);
+  transition: left .45s cubic-bezier(.34,1.4,.64,1); }
+.seg button { position: relative; height: 28px; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 5px; font-weight: 500; font-size: 12px; color: var(--muted); transition: color .25s ease; }
+.seg button:hover, .seg button:active { background: transparent; }
+.seg button[aria-pressed="true"] { color: var(--ink); }
+.seg button svg { width: 14px; height: 14px; }
+.seg.plain button { color: var(--fg); }
+.seg:has(button:disabled) { opacity: .6; }
+
+.slider { overflow: hidden; flex: 1; min-height: 0; margin: 0 -12px; }
+.track { width: 300%; height: 100%; display: flex; transition: transform .5s cubic-bezier(.32,.72,0,1); }
+.slide { width: 33.333%; height: 100%; padding: 0 12px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+.notice { flex: none; font-size: 12px; padding: 8px 10px; border-radius: 12px; background: var(--chip); color: var(--muted); }
+.notice.err { color: var(--err); background: rgba(179,38,30,.1); }
+.notice.attn { color: var(--ink); background: var(--soft); font-weight: 600; }
+.notice .acts { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.notice .acts:empty { display: none; }
+.notice .acts button { height: 24px; padding: 0 10px; border-radius: 999px; background: var(--solid); color: var(--ink); font-weight: 600; font-size: 11.5px; }
+
+.sents { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 10px; font: 16px/1.5 var(--serif); padding: 2px 4px; }
+.sents .dim { color: var(--faint); }
+.sents mark { background: var(--hl); color: inherit; padding: 1px 2px; border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.sents .idle { color: var(--muted); font: 13px/1.45 var(--sans); }
+.rfoot { display: flex; align-items: center; gap: 8px; flex: none; }
+.chip { height: 28px; border-radius: 999px; background: var(--chip); display: inline-flex; align-items: center; gap: 5px; padding: 0 10px 0 8px; font-weight: 500; font-size: 12px; }
+.chip:hover, .chip[aria-pressed="true"] { background: var(--soft); }
+.chip[aria-pressed="true"] { color: var(--ink); }
+.chip svg { width: 13px; height: 13px; }
+.info { margin-left: auto; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.primary { height: 36px; flex: none; width: 100%; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-weight: 600; font-size: 13px; }
+.primary:hover { background: var(--accent); filter: brightness(1.06); }
+.primary:active { transform: scale(.97); }
+.primary[aria-disabled="true"] { opacity: .55; cursor: default; filter: none; }
+.primary.busy { animation: pulse 1.2s ease-in-out infinite; }
+
+.host { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px; background: var(--chip); flex: none; }
+.host .av { width: 32px; height: 32px; border-radius: 50%; background: rgba(127,127,127,.2); display: grid; place-items: center; font-weight: 600; font-size: 13px; flex: none; }
+.host.b .av { background: var(--soft); color: var(--ink); }
+.host .who { flex: 1; min-width: 0; text-align: left; cursor: pointer; border-radius: 8px; display: block; place-items: start; }
+.host .who:hover { background: transparent; }
+.host .who small { display: block; font-size: 11px; color: var(--muted); }
+.host .who b { display: flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 500; }
+.host .who svg { width: 11px; height: 11px; fill: var(--muted); transform: rotate(180deg); }
+.host .pv { width: 28px; height: 28px; color: var(--accent); flex: none; }
+.host .pv:hover { background: var(--soft); }
+.host .pv svg { width: 14px; height: 14px; }
+.setupfill { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.legend { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); flex: none; }
+.legend span.n { display: flex; align-items: center; gap: 5px; font-weight: 600; color: var(--fg); }
+.legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.legend .n + span + .n i { background: var(--accent); }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 6px; padding: 10px 2px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%); }
+.scroll::-webkit-scrollbar { width: 8px; background: transparent; }
+.scroll::-webkit-scrollbar-thumb { background: rgba(127,127,127,.35); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+.scroll::-webkit-scrollbar-button, .scroll::-webkit-scrollbar-corner { display: none; }
+.scroll { scrollbar-width: thin; }
+.msg { all: unset; box-sizing: border-box; flex: none; max-width: 84%; padding: 7px 11px; font: 13px/1.45 var(--sans); cursor: pointer;
+  opacity: .5; transition: opacity .3s ease, transform .35s cubic-bezier(.34,1.4,.64,1), box-shadow .3s ease; }
+.msg.left { align-self: flex-start; background: var(--left); border-radius: 14px 14px 14px 4px; transform-origin: 0 50%; }
+.msg.right { align-self: flex-end; background: var(--right); border-radius: 14px 14px 4px 14px; transform-origin: 100% 50%; }
+.msg.left.on { box-shadow: 0 0 0 1.5px rgba(127,127,127,.5); }
+.msg.right.on { box-shadow: 0 0 0 1.5px var(--accent); }
 .msg:hover, .msg.on { opacity: 1; }
+.msg.on { transform: scale(1.02); }
 .msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.pill {
-  display: none; align-items: center; gap: 8px; margin-left: auto; width: max-content; max-width: 100%;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 4px 6px 4px 4px;
-  box-shadow: 0 6px 20px rgba(0,0,0,.16);
-}
-.pill .title { max-width: 260px; font-weight: 500; }
-.pill .hint { display: none; font-weight: 600; color: var(--accent); max-width: 260px; }
-.wrap.picking .pill .title { display: none; }
-.wrap.picking .pill .hint { display: inline; }
-.wrap.min .bar { display: none; }
-.wrap.min .pill { display: flex; }
-.wrap.min { width: auto; }
-.tip {
-  position: absolute; z-index: 1; pointer-events: none; max-width: 260px; width: max-content;
-  padding: 5px 9px; border-radius: 7px; font-size: 12px; line-height: 1.35;
-  background: var(--fg); color: var(--bg); box-shadow: 0 4px 14px rgba(0,0,0,.2);
-  transform: translate(-50%, calc(-100% - 8px)); opacity: 0; transition: opacity .12s ease;
-}
+.live { display: flex; align-items: center; gap: 4px; flex: none; }
+.live .ib { width: 32px; height: 32px; }
+.live .ib svg { width: 17px; height: 17px; }
+.live .go { width: 42px; height: 42px; box-shadow: 0 4px 12px rgba(39,144,196,.35); }
+.live .lbl { flex: 1; font-size: 11.5px; color: var(--muted); text-align: right; padding-right: 6px; }
+.needs { display: flex; align-items: center; gap: 10px; flex: none; }
+.needs .cost { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.needs .primary { flex: 1; width: auto; }
+
+.sumhead { display: flex; align-items: center; gap: 8px; flex: none; }
+.sumhead .meta { font-size: 11.5px; color: var(--muted); }
+.readbtn { height: 28px; border-radius: 999px; background: var(--soft); color: var(--ink); font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; padding: 0 12px 0 10px; }
+.readbtn:hover { background: var(--soft); filter: brightness(1.1); }
+.readbtn svg { width: 12px; height: 12px; }
+.bullets { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; font: 14.5px/1.45 var(--serif); padding: 2px 4px 8px; }
+.bullets::-webkit-scrollbar { width: 8px; background: transparent; }
+.bullets::-webkit-scrollbar-thumb { background: rgba(127,127,127,.35); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+.bullets { scrollbar-width: thin; }
+.bl { all: unset; box-sizing: border-box; display: flex; gap: 10px; cursor: pointer; border-radius: 6px; opacity: .6; transition: opacity .3s ease; }
+.bl:hover, .bl.on { opacity: 1; }
+.bl.on span:last-child { background: var(--hl); border-radius: 3px; }
+.bl:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bl i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-top: 9px; flex: none; }
+
+.mhead { display: flex; align-items: center; gap: 6px; flex: none; }
+.mhead .back { width: 28px; height: 28px; background: var(--chip); }
+.mhead .back:hover { background: var(--soft); }
+.mhead .back svg { width: 16px; height: 16px; transform: rotate(-90deg); }
+.mhead b { font-size: 13px; font-weight: 600; }
+.done { height: 28px; padding: 0 10px; border-radius: 999px; color: var(--ink); font-weight: 600; font-size: 12px; }
+.done:hover { background: var(--soft); }
+.bigpace { display: flex; align-items: baseline; gap: 10px; padding: 6px 4px 0; }
+.bigpace b { font: 400 46px/1 var(--serif); font-variant-numeric: tabular-nums; }
+.bigpace span { font-size: 14px; font-weight: 600; color: var(--ink); }
+.slwrap { padding: 0 11px; }
+.sl { position: relative; height: 40px; cursor: pointer; touch-action: none; }
+.sl .rail { position: absolute; left: 0; right: 0; top: 17px; height: 6px; border-radius: 3px; background: var(--chip); }
+.sl .fill { position: absolute; left: 0; top: 17px; height: 6px; border-radius: 3px; background: var(--accent); transition: width .4s cubic-bezier(.34,1.3,.64,1); }
+.sl .knob { position: absolute; top: 9px; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: #fff; border: 2px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(39,144,196,.35); transition: left .4s cubic-bezier(.34,1.3,.64,1); }
+.sl.drag .fill, .sl.drag .knob { transition-duration: .12s; }
+.sl .stop { position: absolute; top: 18px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(127,127,127,.5); transition: background .2s ease; }
+.sl .stop.on { background: rgba(255,255,255,.9); }
+.labels { position: relative; height: 18px; }
+.labels span { position: absolute; transform: translateX(-50%); font-weight: 500; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; transition: color .2s ease; }
+.labels span.on { color: var(--ink); }
+.sf { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); padding: 0 4px; }
+.foot { margin-top: auto; font-size: 11.5px; color: var(--muted); padding: 0 4px; }
+.vlist { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; scrollbar-width: thin; }
+.vrow { display: flex; align-items: center; gap: 4px; flex: none; border-radius: 10px; transition: background .2s ease; }
+.vrow:hover, .vrow.on { background: var(--soft); }
+.vrow .pick { flex: 1; min-width: 0; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 8px; font-weight: 500; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; }
+.vrow .pick:hover { background: transparent; }
+.vrow .radio { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1.5px solid rgba(127,127,127,.6); display: grid; place-items: center; transition: border-color .2s ease; }
+.vrow.on .radio { border-color: var(--accent); }
+.vrow .radio i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .3s cubic-bezier(.34,1.56,.64,1); }
+.vrow.on .radio i { transform: scale(1); }
+.vrow .pick em { font-style: normal; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.vrow .pv { width: 28px; height: 28px; margin-right: 4px; color: var(--accent); }
+.vrow .pv svg { width: 11px; height: 11px; }
+.more { font-size: 12px; color: var(--ink); cursor: pointer; padding: 0 4px; text-align: left; border-radius: 6px; display: block; }
+.more:hover { background: transparent; text-decoration: underline; }
+
+.tip { position: absolute; z-index: 3; pointer-events: none; max-width: 240px; width: max-content; padding: 5px 9px; border-radius: 7px; font-size: 12px; line-height: 1.35;
+  background: var(--fg); color: var(--solid); box-shadow: 0 4px 14px rgba(0,0,0,.2); transform: translate(-50%, calc(-100% - 8px)); opacity: 0; transition: opacity .12s ease; }
 .tip.on { opacity: 1; }
 `;
+
+const q = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 
 export class PlayerBar {
   readonly host = document.createElement('readaloud-player');
   private root = this.host.attachShadow({ mode: 'closed' });
   private els: Record<string, HTMLElement> = {};
+  private wrap!: HTMLElement;
   private view: PlayerView | null = null;
+  private size: Size = 'C';
+  private lastSize: Size = 'C';
+  private menu: Menu = null;
   private renderedTranscript: TranscriptItem[] | null = null;
+  private renderedSummary: TranscriptItem[] | null = null;
   private activeTurn = -1;
   private pointerInTranscript = false;
-  /** Whether the user minimized the bar themselves (restored after picking). */
-  private userMinimized = false;
-  /** Re-anchors a visible tooltip after the bar's layout changes. */
+  private lastNotice = '';
+  private paceDrag = false;
+  private hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Re-anchors a visible tooltip after the layout changes. */
   private repositionTip: () => void = () => {};
 
   constructor(private h: PlayerHandlers) {
@@ -260,90 +424,151 @@ export class PlayerBar {
     attachStyles(this.root, CSS_TEXT);
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
+    wrap.dataset.size = 'C';
+    wrap.dataset.mode = 'article';
     wrap.innerHTML = `
-      <div class="bar" role="region" aria-label="Read aloud player">
-        <div class="top">
-          <div class="meta">
-            <div class="title" data-el="title"></div>
-            <div class="now" data-el="now" aria-live="polite"></div>
-            <div class="actions" data-el="actions"></div>
+      <div class="shell" role="region" aria-label="Read aloud player">
+        <div class="layer la">
+          ${grip}
+          <button class="go" data-act="toggle" aria-label="Play" data-tip="Play (Alt+Shift+R)">${playPause}</button>
+          <div class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+          <button class="ib sm" data-act="toMini" aria-label="Expand player" data-tip="Expand">${icon('expand')}</button>
+        </div>
+        <div class="layer lb">
+          ${grip}
+          <button class="ib" data-act="prev" aria-label="Previous sentence" data-tip="Previous sentence (Alt+Shift+,)">${icon('prev')}</button>
+          <button class="go" data-act="toggle" aria-label="Play" data-tip="Play (Alt+Shift+R)">${playPause}</button>
+          <button class="ib" data-act="next" aria-label="Next sentence" data-tip="Next sentence (Alt+Shift+.)">${icon('next')}</button>
+          <span class="vsep"></span>
+          <button class="tabchip" data-act="toFull" data-tip="Open the full player"><span data-el="chipIcon"></span><span data-el="chipLabel"></span><svg class="caret" viewBox="0 0 24 24" aria-hidden="true">${ICONS.expand}</svg></button>
+          <span class="flex1"></span>
+          <button class="ib fill" data-act="toPill" aria-label="Minimize" data-tip="Minimize">${icon('minimize')}</button>
+        </div>
+        <div class="layer lp">
+          <span>Click a sentence on the page · Esc to cancel</span>
+          <button class="ib sm" data-act="pick" aria-label="Cancel jump" data-tip="Cancel jump (Esc)">${icon('close')}</button>
+        </div>
+        <div class="layer lc">
+          <div class="head">
+            ${grip}
+            <div class="ttl"><div class="t1" data-el="title"></div><div class="t2" data-el="site"></div></div>
+            <button class="ib sm" data-act="settings" aria-label="Settings" data-tip="Settings: API key, voices, usage, cache">${icon('settings')}</button>
+            <button class="ib sm" data-act="toMini" aria-label="Minimize" data-tip="Minimize the player">${icon('minimize')}</button>
+            <button class="ib sm" data-act="close" aria-label="Stop and close" data-tip="Stop reading and close the player">${icon('close')}</button>
           </div>
-          <div class="modes" role="group" aria-label="Mode">
-            <button class="mode" data-act="mode-article" data-el="modeArticle" aria-pressed="true"
-              data-tip="Read mode: read the page aloud, sentence by sentence">${icon('read')}Read</button>
-            <button class="mode" data-act="mode-podcast" data-el="modePodcast" aria-pressed="false"
-              data-tip="Podcast mode: two hosts discuss this page (you write the script first)">${icon('podcast')}Podcast</button>
-            <button class="mode" data-act="mode-summary" data-el="modeSummary" aria-pressed="false"
-              data-tip="Summary mode: hear a short summary of this page instead of all of it">${icon('summary')}Summary</button>
+          <div class="trow" data-el="trow">
+            <button class="ib" data-act="prev" aria-label="Previous sentence" data-tip="Previous sentence (Alt+Shift+,)">${icon('prev')}</button>
+            <button class="go" data-act="toggle" aria-label="Play" data-tip="Play (Alt+Shift+R)">${playPause}</button>
+            <button class="ib" data-act="next" aria-label="Next sentence" data-tip="Next sentence (Alt+Shift+.)">${icon('next')}</button>
+            <span class="flex1"></span>
+            <button class="pill" data-act="openPace" data-el="paceBtn" data-tip="Reading speed"><span data-el="paceLabel"></span><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.expand}</svg></button>
+            <button class="pill" data-act="openVoice" data-el="voiceBtn" data-tip="Reading voice"><span data-el="voiceLabel"></span><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.expand}</svg></button>
           </div>
-          <button data-act="minimize" aria-label="Minimize player" data-tip="Minimize the player">${icon('minimize')}</button>
-          <button data-act="close" aria-label="Stop and close" data-tip="Stop reading and close the player">${icon('close')}</button>
-        </div>
-        <div class="pod" data-el="pod" hidden>
-          <label>Host 1 (left)
-            <span class="pick">
-              <select data-el="hostA" aria-label="Host 1 voice" data-tip="Voice of the lead host"></select>
-              <button data-act="previewA" data-el="previewA" aria-label="Preview host 1 voice" data-tip="Hear a short sample of this voice">${icon('play')}</button>
-            </span>
-          </label>
-          <label>Host 2 (right)
-            <span class="pick">
-              <select data-el="hostB" aria-label="Host 2 voice" data-tip="Voice of the co-host"></select>
-              <button data-act="previewB" data-el="previewB" aria-label="Preview host 2 voice" data-tip="Hear a short sample of this voice">${icon('play')}</button>
-            </span>
-          </label>
-          <label>Length
-            <select data-el="podLength" aria-label="Podcast length" data-tip="Target length of the conversation">
-              <option value="short">Short (~5 min)</option>
-              <option value="standard">Standard (~10 min)</option>
-            </select>
-          </label>
-          <button class="primary" data-act="podAction" data-el="podAction"></button>
-        </div>
-        <div class="sum" data-el="sum" hidden>
-          <label>Length
-            <select data-el="sumLength" aria-label="Summary length" data-tip="How long the summary should be">
-              <option value="brief">Brief (~1 min)</option>
-              <option value="detailed">Detailed (~2 min)</option>
-            </select>
-          </label>
-          <button class="primary" data-act="sumAction" data-el="sumAction"></button>
-        </div>
-        <div class="chat" data-el="chat" hidden>
-          <div class="chathead"><span data-el="nameLeft"></span><span data-el="nameRight"></span></div>
-          <div class="transcript" data-el="transcript" role="list"></div>
-        </div>
-        <div class="controls">
-          <div class="transport">
-            <button data-act="prevBlock" aria-label="Previous paragraph" data-tip="Previous paragraph (or start of this one)">${icon('prevBlock')}</button>
-            <button data-act="prev" aria-label="Previous sentence" data-tip="Previous sentence (Alt+Shift+,)">${icon('prev')}</button>
-            <button class="main" data-act="toggle" data-el="toggle" aria-label="Play" data-tip="Play (Alt+Shift+R)">${icon('play')}</button>
-            <button data-act="next" aria-label="Next sentence" data-tip="Next sentence (Alt+Shift+.)">${icon('next')}</button>
-            <button data-act="nextBlock" aria-label="Next paragraph" data-tip="Next paragraph">${icon('nextBlock')}</button>
+          <div class="stage">
+            <div class="pane main">
+              <div class="seg plain" data-el="tabs" style="grid-template-columns:repeat(3,1fr)" role="group" aria-label="Mode">
+                <span class="thumb" data-el="tabThumb" style="width:calc((100% - 6px) / 3)"></span>
+                ${MODES.map(
+                  (m) =>
+                    `<button data-act="mode-${m}" data-el="tab-${m}" aria-pressed="false" data-tip="${
+                      { article: 'Read the page aloud, sentence by sentence', podcast: 'Two hosts discuss this page (you write the script first)', summary: 'Hear a short summary instead of the whole page' }[m]
+                    }">${icon(TAB_ICON[m])}${TAB_LABEL[m]}</button>`,
+                ).join('')}
+              </div>
+              <div class="slider"><div class="track" data-el="track">
+                <div class="slide" data-el="slideRead">
+                  <div class="notice" data-el="notice" hidden><div data-el="noticeText"></div><div class="acts" data-el="noticeActs"></div></div>
+                  <div class="sents" data-el="sents" aria-live="polite"></div>
+                  <div class="rfoot">
+                    <button class="chip" data-act="pick" data-el="pick" aria-pressed="false" aria-label="Jump to a sentence"
+                      data-tip="Jump to: click any sentence on the page to read from its start (Esc cancels; Alt+click works anytime)">${icon('cursor')}Jump to</button>
+                    <span class="info" data-el="info"></span>
+                  </div>
+                </div>
+                <div class="slide" data-el="slidePod">
+                  <div class="notice" data-el="podNotice" hidden><div data-el="podNoticeText"></div><div class="acts" data-el="podNoticeActs"></div></div>
+                  <div class="setupfill" data-el="podSetup">
+                    <div class="host a">
+                      <span class="av" data-el="avA"></span>
+                      <button class="who" data-act="openHostA" data-tip="Choose the lead host's voice"><small>Host 1 · left</small><b><span data-el="nameA"></span><svg viewBox="0 0 24 24">${ICONS.expand}</svg></b></button>
+                      <button class="pv" data-act="previewA" data-el="previewA" aria-label="Preview host 1 voice" data-tip="Hear a short sample of this voice">${icon('play')}</button>
+                    </div>
+                    <div class="host b">
+                      <span class="av" data-el="avB"></span>
+                      <button class="who" data-act="openHostB" data-tip="Choose the co-host's voice"><small>Host 2 · right</small><b><span data-el="nameB"></span><svg viewBox="0 0 24 24">${ICONS.expand}</svg></b></button>
+                      <button class="pv" data-act="previewB" data-el="previewB" aria-label="Preview host 2 voice" data-tip="Hear a short sample of this voice">${icon('play')}</button>
+                    </div>
+                    <div class="seg plain" data-el="podLen" style="grid-template-columns:1fr 1fr" role="group" aria-label="Podcast length">
+                      <span class="thumb" data-el="podLenThumb" style="width:calc((100% - 6px) / 2)"></span>
+                      <button data-act="len-short" data-el="len-short" aria-pressed="false" data-tip="Target length of the conversation">Short · ~5 min</button>
+                      <button data-act="len-standard" data-el="len-standard" aria-pressed="false" data-tip="Target length of the conversation">Standard · ~10 min</button>
+                    </div>
+                  </div>
+                  <div class="setupfill" data-el="podScript" hidden>
+                    <div class="legend"><span class="n"><i></i><span data-el="legA"></span></span><span>&amp;</span><span class="n"><i></i><span data-el="legB"></span></span></div>
+                    <div class="scroll" data-el="transcript" role="list" aria-label="Podcast conversation"></div>
+                    <div class="live" data-el="live" hidden>
+                      <button class="ib" data-act="prevBlock" aria-label="Previous turn" data-tip="Previous turn (or start of this one)">${icon('prev')}</button>
+                      <button class="go" data-act="toggle" aria-label="Play" data-tip="Play (Alt+Shift+R)">${playPause}</button>
+                      <button class="ib" data-act="nextBlock" aria-label="Next turn" data-tip="Next turn">${icon('next')}</button>
+                      <span class="lbl" data-el="turnLabel"></span>
+                      <button class="pill" data-act="openPace" data-tip="Reading speed"><span data-el="paceLabel2"></span><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS.expand}</svg></button>
+                    </div>
+                  </div>
+                  <div class="needs" data-el="needs" hidden>
+                    <span class="cost" data-el="needsCost"></span>
+                    <button class="primary" data-act="podAction" data-el="podAction"></button>
+                  </div>
+                  <button class="primary" data-act="podAction" data-el="podWrite"></button>
+                </div>
+                <div class="slide" data-el="slideSum">
+                  <div class="notice" data-el="sumNotice" hidden><div data-el="sumNoticeText"></div><div class="acts" data-el="sumNoticeActs"></div></div>
+                  <div class="setupfill" data-el="sumSetup">
+                    <div class="seg plain" data-el="sumLen" style="grid-template-columns:1fr 1fr" role="group" aria-label="Summary length">
+                      <span class="thumb" data-el="sumLenThumb" style="width:calc((100% - 6px) / 2)"></span>
+                      <button data-act="sum-brief" data-el="sum-brief" aria-pressed="false" data-tip="How long the summary should be">Brief · ~1 min</button>
+                      <button data-act="sum-detailed" data-el="sum-detailed" aria-pressed="false" data-tip="How long the summary should be">Detailed · ~2 min</button>
+                    </div>
+                    <div class="foot" style="margin-top:0">Sarvam-105B summarises the page, then it's read aloud.</div>
+                    <span class="flex1"></span>
+                    <button class="primary" data-act="sumAction" data-el="sumAction"></button>
+                  </div>
+                  <div class="setupfill" data-el="sumDone" hidden>
+                    <div class="sumhead"><span class="meta" data-el="sumMeta"></span><span class="flex1"></span>
+                      <button class="readbtn" data-act="toggle" data-el="readBtn">${icon('play')}<span>Read</span></button></div>
+                    <div class="bullets" data-el="bullets" role="list" aria-label="Summary"></div>
+                  </div>
+                </div>
+              </div></div>
+            </div>
+            <div class="pane menu pacepane">
+              <div class="mhead"><button class="back" data-act="closeMenu" aria-label="Back">${icon('expand')}</button><b>Reading speed</b><span class="flex1"></span><button class="done" data-act="closeMenu">Done</button></div>
+              <div class="bigpace"><b data-el="bigPace"></b><span data-el="paceWord"></span></div>
+              <div class="slwrap">
+                <div class="sl" data-el="sl"><div class="rail"></div><div class="fill" data-el="slFill"></div><div data-el="slStops"></div><span class="knob" data-el="slKnob"></span></div>
+                <div class="labels" data-el="slLabels"></div>
+              </div>
+              <div class="sf"><span>Slower</span><span>Faster</span></div>
+              <div class="foot">Applies from the next sentence.</div>
+            </div>
+            <div class="pane menu voicepane">
+              <div class="mhead"><button class="back" data-act="closeMenu" aria-label="Back">${icon('expand')}</button><b data-el="voiceTitle"></b><span class="flex1"></span><button class="done" data-act="closeMenu">Done</button></div>
+              <div class="vlist" data-el="vlist" role="radiogroup"></div>
+              <button class="more" data-act="settings">More voices in Settings…</button>
+            </div>
           </div>
-          <span class="info" data-el="info"></span>
-        </div>
-        <div class="options">
-          <button class="text" data-act="pick" data-el="pick" aria-pressed="false" aria-label="Jump to a sentence"
-            data-tip="Jump to: click any sentence on the page to read from its start (Esc cancels; Alt+click works anytime)">${icon('cursor')}Jump to</button>
-          <select data-el="pace" aria-label="Speed" data-tip="Reading speed (applies from the next sentence)"></select>
-          <select data-el="voice" aria-label="Voice" data-tip="Reading voice, also used for summaries (podcast hosts are chosen in Podcast mode)"></select>
-          <button class="end" data-act="settings" aria-label="Settings" data-tip="Settings: API key, voices, usage, cache">${icon('settings')}</button>
         </div>
       </div>
-      <div class="pill" role="region" aria-label="Read aloud player (minimized)">
-        <button class="main" data-act="toggle" data-el="toggle2" aria-label="Play" data-tip="Play (Alt+Shift+R)">${icon('play')}</button>
-        <span class="title" data-el="title2"></span>
-        <span class="hint">Click a sentence on the page · Esc to cancel</span>
-        <button data-act="expand" data-el="expand" aria-label="Expand player" data-tip="Expand the player">${icon('expand')}</button>
-      </div>
+      <button class="xbtn" data-act="close" aria-label="Close player">${icon('close')}</button>
       <div class="tip" data-el="tip" aria-hidden="true"></div>`;
     this.root.append(wrap);
+    this.wrap = wrap;
     for (const el of wrap.querySelectorAll<HTMLElement>('[data-el]')) this.els[el.dataset.el!] = el;
-    this.els.wrap = wrap;
 
     wrap.addEventListener('click', (e) => {
       const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+      if (!act) return;
+      if (act.startsWith('mode-')) return this.h.setMode(act.slice(5) as PlayerMode);
       switch (act) {
         case 'toggle': return this.h.toggle();
         case 'prev': return this.h.prev();
@@ -353,186 +578,388 @@ export class PlayerBar {
         case 'pick': return this.h.togglePick();
         case 'settings': return this.h.openSettings();
         case 'close': return this.h.close();
-        case 'mode-article': return this.h.setMode('article');
-        case 'mode-podcast': return this.h.setMode('podcast');
-        case 'mode-summary': return this.h.setMode('summary');
+        case 'toPill': return this.setSize('A');
+        case 'toMini': return this.setSize('B');
+        case 'toFull': return this.setSize('C');
+        case 'openPace': return this.toggleMenu('pace');
+        case 'openVoice': return this.toggleMenu('voice');
+        case 'openHostA': return this.toggleMenu('hostA');
+        case 'openHostB': return this.toggleMenu('hostB');
+        case 'closeMenu': return this.toggleMenu(null);
         case 'podAction':
-          if (this.els.podAction!.getAttribute('aria-disabled') === 'true') return;
+          if ((e.target as HTMLElement).closest('[aria-disabled="true"]')) return;
           return this.h.podcastAction();
         case 'sumAction':
           if (this.els.sumAction!.getAttribute('aria-disabled') === 'true') return;
           return this.h.summaryAction();
-        case 'previewA': return this.h.previewVoice((this.els.hostA as HTMLSelectElement).value);
-        case 'previewB': return this.h.previewVoice((this.els.hostB as HTMLSelectElement).value);
-        case 'minimize':
-          this.userMinimized = true;
-          return wrap.classList.add('min');
-        case 'expand':
-          // While picking, the expand button cancels picking (which restores the bar).
-          if (this.view?.picking) return this.h.togglePick();
-          this.userMinimized = false;
-          return wrap.classList.remove('min');
+        case 'previewA': return this.h.previewVoice(this.view?.podcast?.hostA ?? '');
+        case 'previewB': return this.h.previewVoice(this.view?.podcast?.hostB ?? '');
+        case 'len-short': return this.h.setPodcastLength('short');
+        case 'len-standard': return this.h.setPodcastLength('standard');
+        case 'sum-brief': return this.h.setSummaryLength('brief');
+        case 'sum-detailed': return this.h.setSummaryLength('detailed');
       }
     });
 
-    this.els.pace!.addEventListener('change', (e) => this.h.setPace(Number((e.target as HTMLSelectElement).value)));
-    this.els.voice!.addEventListener('change', (e) => {
-      const sel = e.target as HTMLSelectElement;
-      if (sel.value === MORE_VOICES) {
-        sel.value = this.view?.voice ?? '';
-        this.h.openSettings();
-      } else this.h.setVoice(sel.value);
+    wrap.addEventListener('pointerenter', () => { clearTimeout(this.hoverTimer); wrap.classList.add('hover'); });
+    wrap.addEventListener('pointerleave', () => {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = setTimeout(() => wrap.classList.remove('hover'), 160);
     });
-    this.els.hostA!.addEventListener('change', (e) => this.h.setHost('A', (e.target as HTMLSelectElement).value));
-    this.els.hostB!.addEventListener('change', (e) => this.h.setHost('B', (e.target as HTMLSelectElement).value));
-    this.els.podLength!.addEventListener('change', (e) =>
-      this.h.setPodcastLength((e.target as HTMLSelectElement).value === 'standard' ? 'standard' : 'short'),
-    );
-    this.els.sumLength!.addEventListener('change', (e) =>
-      this.h.setSummaryLength((e.target as HTMLSelectElement).value === 'detailed' ? 'detailed' : 'brief'),
-    );
-    // Don't auto-scroll the chat out from under the pointer.
     this.els.transcript!.addEventListener('pointerenter', () => (this.pointerInTranscript = true));
     this.els.transcript!.addEventListener('pointerleave', () => (this.pointerInTranscript = false));
+    this.setupSlider();
+    this.setupDrag();
     this.setupTooltips(wrap);
-    // Keep page shortcuts from firing while using the bar.
+    // Keep page shortcuts from firing while using the player.
     wrap.addEventListener('keydown', (e) => e.stopPropagation());
 
+    this.syncInert();
+    void loadPlayerFonts();
     document.documentElement.append(this.host);
   }
 
-  /** The player's on-screen box (bar or minimized pill), or null when hidden. */
+  /** The player's on-screen box, or null when hidden. */
   get rect(): DOMRect | null {
     if (this.host.style.display === 'none') return null;
-    const wrap = this.els.wrap!;
-    const visible = wrap.classList.contains('min') ? wrap.querySelector('.pill') : wrap.firstElementChild;
-    return (visible as HTMLElement | null)?.getBoundingClientRect() ?? null;
+    return (this.wrap.firstElementChild as HTMLElement | null)?.getBoundingClientRect() ?? null;
   }
 
-  show() {
-    this.host.style.display = '';
+  show() { this.host.style.display = ''; }
+  hide() { this.host.style.display = 'none'; }
+  remove() { this.host.remove(); }
+
+  private setSize(size: Size) {
+    this.size = size;
+    this.lastSize = size;
+    if (size !== 'C') this.menu = null;
+    this.wrap.dataset.size = size;
+    this.wrap.dataset.menu = this.menu ?? '';
+    this.syncInert();
+    this.repositionTip();
   }
 
-  hide() {
-    this.host.style.display = 'none';
+  /** Layers that are faded out must not be reachable by keyboard. */
+  private syncInert() {
+    const picking = this.wrap.classList.contains('picking');
+    for (const [cls, size] of [['.la', 'A'], ['.lb', 'B'], ['.lc', 'C']] as const) {
+      this.wrap.querySelector(cls)!.toggleAttribute('inert', picking || this.size !== size);
+    }
+    this.wrap.querySelector('.lp')!.toggleAttribute('inert', !picking);
   }
 
-  remove() {
-    this.host.remove();
+  private toggleMenu(m: Menu) {
+    this.menu = m === this.menu ? null : m;
+    this.wrap.dataset.menu = this.menu ?? '';
+    if (this.view) this.renderMenus(this.view);
+    this.els.paceBtn!.classList.toggle('on', this.menu === 'pace');
+    this.els.voiceBtn!.classList.toggle('on', this.menu === 'voice');
+  }
+
+  private setSeg(seg: HTMLElement, thumb: HTMLElement, index: number, n: number) {
+    thumb.style.left = `calc(3px + ${index} * (100% - 6px) / ${n})`;
+    seg.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(i === index)));
   }
 
   render(v: PlayerView) {
     const wasPicking = this.view?.picking ?? false;
+    const prevMode = this.view?.mode;
     this.view = v;
     const { state } = v;
-    const wrap = this.els.wrap!;
+    const wrap = this.wrap;
     const playing = state.status === 'playing';
-    this.els.title!.textContent = v.title;
-    this.els.title2!.textContent = v.title;
 
-    // Picking collapses the bar to the pill so it covers less of the page.
+    // Picking collapses the player to a slim hint bar; afterwards it returns to where it was.
     if (v.picking !== wasPicking) {
       wrap.classList.toggle('picking', v.picking);
-      wrap.classList.toggle('min', v.picking || this.userMinimized);
-      this.els.expand!.dataset.tip = v.picking ? 'Cancel jump (Esc)' : 'Expand the player';
-      this.els.expand!.setAttribute('aria-label', v.picking ? 'Cancel jump' : 'Expand player');
+      if (!v.picking) this.setSize(this.lastSize);
+      else this.syncInert();
     }
-
-    for (const key of ['toggle', 'toggle2'] as const) {
-      const btn = this.els[key]!;
-      btn.innerHTML = icon(playing ? 'pause' : 'play');
+    wrap.classList.toggle('playing', playing);
+    wrap.dataset.mode = v.mode;
+    this.els.title!.textContent = v.title;
+    this.els.site!.textContent = location.hostname;
+    for (const b of wrap.querySelectorAll<HTMLElement>('[data-act="toggle"]')) {
       const label = playing ? 'Pause' : 'Play';
-      btn.setAttribute('aria-label', label);
-      btn.dataset.tip = `${label} (Alt+Shift+R)`;
-      btn.classList.toggle('busy', state.buffering && playing);
+      b.setAttribute('aria-label', label);
+      b.dataset.tip = `${label} (Alt+Shift+R)`;
+      b.classList.toggle('busy', state.buffering && playing);
+    }
+    this.els.chipIcon!.innerHTML = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#2790C4">${ICONS[TAB_ICON[v.mode]]}</svg>`;
+    this.els.chipLabel!.textContent = TAB_LABEL[v.mode];
+
+    // Tabs
+    const idx = MODES.indexOf(v.mode);
+    this.els.trow!.toggleAttribute('inert', v.mode === 'podcast');
+    this.setSeg(this.els.tabs!, this.els.tabThumb!, idx, 3);
+    (this.els.track as HTMLElement).style.transform = `translateX(-${idx * 33.333}%)`;
+    // Only the active slide is reachable (the others are off-screen).
+    (['slideRead', 'slidePod', 'slideSum'] as const).forEach((k, i) => this.els[k]!.toggleAttribute('inert', i !== idx));
+    // Host pickers belong to the Podcast tab.
+    if (prevMode !== v.mode && (this.menu === 'hostA' || this.menu === 'hostB')) {
+      this.menu = null;
+      wrap.dataset.menu = '';
     }
 
-    const now = this.els.now!;
-    now.className = 'now';
-    const actions = this.els.actions!;
-    actions.replaceChildren(
-      ...(v.notice?.actions ?? []).map((a) => {
+    this.els.paceLabel!.textContent = `${v.pace}×`;
+    this.els.paceLabel2!.textContent = `${v.pace}×`;
+    this.els.voiceLabel!.textContent = short(v.voice);
+
+    this.renderReader(v);
+    this.renderPodcast(v);
+    this.renderSummary(v);
+    this.renderMenus(v);
+
+    // An error or a prompt that needs attention must not hide inside a collapsed player.
+    const attention = v.notice && v.notice.tone !== 'info' ? v.notice.text : state.status === 'error' || state.status === 'blocked' ? state.status : '';
+    if (attention && attention !== this.lastNotice && !v.picking) this.setSize('C');
+    this.lastNotice = attention;
+    this.repositionTip();
+  }
+
+  private statusLine(v: PlayerView): { text: string; tone: 'info' | 'attn' | 'err' } | null {
+    const { state } = v;
+    if (state.status === 'error') return { text: `${state.error ?? 'Something went wrong.'} Press ▶ to retry.`, tone: 'err' };
+    if (state.status === 'blocked') return { text: 'Press ▶ to start: the browser needs a click on the page before it plays audio.', tone: 'attn' };
+    return null;
+  }
+
+  private fillNotice(box: HTMLElement, text: HTMLElement, acts: HTMLElement, n: { text: string; tone: string; actions: Notice['actions'] } | null) {
+    box.hidden = !n;
+    acts.replaceChildren();
+    if (!n) return;
+    box.className = `notice${n.tone === 'info' ? '' : ' ' + n.tone}`;
+    text.textContent = n.text;
+    acts.replaceChildren(
+      ...n.actions.map((a) => {
         const b = document.createElement('button');
         b.textContent = a.label;
         b.addEventListener('click', a.run);
         return b;
       }),
     );
-    if (v.notice) {
-      if (v.notice.tone !== 'info') now.classList.add(v.notice.tone);
-      now.textContent = v.notice.text;
-    } else if (state.status === 'error') {
-      now.classList.add('err');
-      now.textContent = `${state.error ?? 'Something went wrong.'} Press ▶ to retry.`;
-    } else if (state.status === 'blocked') {
-      now.classList.add('attn');
-      now.textContent = 'Press ▶ to start: the browser needs a click on the page before it plays audio.';
-    } else if (state.status === 'idle') {
-      now.textContent = v.overview;
-    } else if (state.status === 'ended') {
-      now.textContent = 'Finished. Press ▶ to start over.';
-    } else {
-      const prefix = state.buffering && playing ? 'Loading audio… ' : '';
-      now.textContent = prefix + v.chunkText(state.index);
-    }
+  }
 
+  private renderReader(v: PlayerView) {
+    const { state } = v;
+    const active = v.mode === 'article';
+    // Info notices are hints for the other tabs' setup, which has its own wording; show them here only.
+    const status = this.statusLine(v);
+    const notice = v.notice && (active || v.notice.tone !== 'info' || v.notice.actions.length) ? v.notice : null;
+    const shown = active ? (notice ?? (status ? { ...status, actions: [] } : null)) : null;
+    this.fillNotice(this.els.notice!, this.els.noticeText!, this.els.noticeActs!, shown && { text: shown.text, tone: shown.tone, actions: shown.actions });
+
+    const sents = this.els.sents!;
+    const sentence = (i: number, cls: string) => {
+      const d = document.createElement('div');
+      d.className = cls;
+      d.textContent = v.chunkText(i);
+      return d;
+    };
+    if (!state.total || state.status === 'idle' || state.status === 'ended') {
+      const d = document.createElement('div');
+      d.className = 'idle';
+      d.textContent = state.status === 'ended' ? 'Finished. Press ▶ to start over.' : v.overview;
+      sents.replaceChildren(d);
+    } else {
+      const i = Math.min(state.index, state.total - 1);
+      const cur = document.createElement('div');
+      const mark = document.createElement('mark');
+      mark.textContent = (state.buffering && state.status === 'playing' ? '… ' : '') + v.chunkText(i);
+      cur.append(mark);
+      sents.replaceChildren(...(i > 0 ? [sentence(i - 1, 'dim')] : []), cur, ...(i < state.total - 1 ? [sentence(i + 1, 'dim')] : []));
+    }
+    this.els.pick!.hidden = !active;
+    this.els.pick!.setAttribute('aria-pressed', String(v.picking));
     this.els.info!.textContent = state.total
       ? `${Math.min(state.index + 1, state.total)} / ${state.total} · ~${Math.max(1, Math.round(v.remainingMinutes))} min left`
       : '';
-
-    const pace = this.els.pace as HTMLSelectElement;
-    if (pace.options.length !== v.paces.length || !pace.matches(':focus')) {
-      pace.replaceChildren(...v.paces.map((p) => new Option(`${p}×`, String(p))));
-      pace.value = String(v.paces.includes(v.pace) ? v.pace : 1);
-    }
-    const voice = this.els.voice as HTMLSelectElement;
-    if (!voice.matches(':focus')) {
-      const list = v.voices.includes(v.voice) ? v.voices : [v.voice, ...v.voices];
-      voice.replaceChildren(...list.map((id) => new Option(prettyVoice(id), id)), new Option('More voices…', MORE_VOICES));
-      voice.value = v.voice;
-    }
-    // Page sentences belong to Read mode; in the other modes, the chat messages are the jump targets.
-    this.els.pick!.hidden = v.mode !== 'article';
-    this.els.voice!.hidden = v.mode === 'podcast';
-    this.els.pick!.setAttribute('aria-pressed', String(v.picking));
-    this.els.modeArticle!.setAttribute('aria-pressed', String(v.mode === 'article'));
-    this.els.modePodcast!.setAttribute('aria-pressed', String(v.mode === 'podcast'));
-    this.els.modeSummary!.setAttribute('aria-pressed', String(v.mode === 'summary'));
-    this.els.transcript!.setAttribute('aria-label', v.mode === 'summary' ? 'Summary' : 'Podcast conversation');
-    this.renderPodcast(v.podcast ?? null);
-    this.renderSummary(v.summary ?? null);
-    this.renderChat(v.transcript ?? null, v.hostNames ?? null, state.index);
-    this.repositionTip();
   }
 
-  private renderPodcast(p: PodcastPanel | null) {
-    const box = this.els.pod!;
-    box.hidden = !p;
-    if (!p) return;
-    for (const [key, value] of [['hostA', p.hostA], ['hostB', p.hostB]] as const) {
-      const sel = this.els[key] as HTMLSelectElement;
-      if (sel.options.length !== p.voices.length + 1) {
-        sel.replaceChildren(new Option('Choose a voice…', ''), ...p.voices.map((id) => new Option(prettyVoice(id), id)));
-      }
-      if (!sel.matches(':focus')) sel.value = value;
-      sel.disabled = p.locked;
-    }
+  private renderPodcast(v: PlayerView) {
+    const p = v.podcast ?? null;
+    const active = v.mode === 'podcast';
+    const items = active ? v.transcript ?? null : null;
+    const hasScript = !!items?.length;
+    this.fillNotice(
+      this.els.podNotice!, this.els.podNoticeText!, this.els.podNoticeActs!,
+      active && v.notice && (v.notice.tone !== 'info' || v.notice.actions.length) ? v.notice : active && this.statusLine(v) ? { ...this.statusLine(v)!, actions: [] } : null,
+    );
+    this.els.podSetup!.hidden = hasScript || !p;
+    this.els.podScript!.hidden = !hasScript;
+    if (!p) { this.els.podWrite!.hidden = true; this.els.needs!.hidden = true; return; }
+
+    const nm = (id: string) => (id ? short(id) : 'Choose…');
+    this.els.nameA!.textContent = nm(p.hostA);
+    this.els.nameB!.textContent = nm(p.hostB);
+    this.els.avA!.textContent = (p.hostA ? short(p.hostA) : '?').charAt(0);
+    this.els.avB!.textContent = (p.hostB ? short(p.hostB) : '?').charAt(0);
+    this.els.legA!.textContent = v.hostNames?.left || nm(p.hostA);
+    this.els.legB!.textContent = v.hostNames?.right || nm(p.hostB);
     (this.els.previewA as HTMLButtonElement).disabled = !p.hostA;
     (this.els.previewB as HTMLButtonElement).disabled = !p.hostB;
-    const len = this.els.podLength as HTMLSelectElement;
-    len.value = p.length;
-    len.disabled = p.locked;
-    renderButton(this.els.podAction as HTMLButtonElement, p.button);
+    this.setSeg(this.els.podLen!, this.els.podLenThumb!, p.length === 'standard' ? 1 : 0, 2);
+    this.els.podLen!.querySelectorAll('button').forEach((b) => ((b as HTMLButtonElement).disabled = p.locked));
+
+    // Without a script the one button writes it; with a script it is "Generate audio" beside a cost note.
+    this.setPrimary(this.els.podWrite as HTMLButtonElement, hasScript ? null : p.button);
+    this.els.needs!.hidden = !(hasScript && p.button);
+    if (hasScript && p.button) {
+      this.setPrimary(this.els.podAction as HTMLButtonElement, p.button);
+      const [label, cost] = p.button.label.split(' · ');
+      (this.els.podAction as HTMLButtonElement).textContent = label ?? p.button.label;
+      this.els.needsCost!.textContent = `${items!.length} turns${cost ? '\n' + cost : ''}`;
+      this.els.needsCost!.style.whiteSpace = 'pre-line';
+    }
+    this.els.live!.hidden = !(hasScript && !p.button);
+    this.els.turnLabel!.textContent = hasScript ? `Turn ${this.turnIndex(items!, v.state.index) + 1} of ${items!.length}` : '';
+    this.renderChat(items, v.state.index);
   }
 
-  private renderSummary(p: SummaryPanel | null) {
-    const box = this.els.sum!;
-    box.hidden = !p;
-    if (!p) return;
-    const len = this.els.sumLength as HTMLSelectElement;
-    len.value = p.length;
-    len.disabled = p.locked;
-    renderButton(this.els.sumAction as HTMLButtonElement, p.button);
+  private turnIndex(items: TranscriptItem[], index: number) {
+    let a = 0;
+    for (let i = 0; i < items.length; i++) if (items[i]!.start <= index) a = i;
+    return a;
+  }
+
+  private renderSummary(v: PlayerView) {
+    const p = v.summary ?? null;
+    const active = v.mode === 'summary';
+    const items = active ? v.transcript ?? null : null;
+    const done = !!items?.length;
+    this.fillNotice(
+      this.els.sumNotice!, this.els.sumNoticeText!, this.els.sumNoticeActs!,
+      active && v.notice && (v.notice.tone !== 'info' || v.notice.actions.length) ? v.notice : active && this.statusLine(v) ? { ...this.statusLine(v)!, actions: [] } : null,
+    );
+    this.els.sumSetup!.hidden = done || !p;
+    this.els.sumDone!.hidden = !done;
+    if (p) {
+      this.setSeg(this.els.sumLen!, this.els.sumLenThumb!, p.length === 'detailed' ? 1 : 0, 2);
+      this.els.sumLen!.querySelectorAll('button').forEach((b) => ((b as HTMLButtonElement).disabled = p.locked));
+      this.setPrimary(this.els.sumAction as HTMLButtonElement, p.button);
+    }
+    const playing = v.state.status === 'playing';
+    this.els.readBtn!.innerHTML = `${icon(playing ? 'pause' : 'play')}<span>${playing ? 'Pause' : 'Read'}</span>`;
+    if (!done) return;
+    this.els.sumMeta!.textContent = `${items!.length} key points`;
+    if (items !== this.renderedSummary) {
+      this.renderedSummary = items;
+      this.els.bullets!.replaceChildren(
+        ...items!.map((t) => {
+          const b = document.createElement('button');
+          b.className = 'bl';
+          b.setAttribute('role', 'listitem');
+          b.dataset.tip = 'Read from here';
+          b.innerHTML = '<i></i><span></span>';
+          b.lastElementChild!.textContent = t.text;
+          b.addEventListener('click', () => this.h.playFrom(t.start));
+          return b;
+        }),
+      );
+    }
+    const a = this.turnIndex(items!, v.state.index);
+    this.els.bullets!.querySelectorAll('.bl').forEach((el, i) => el.classList.toggle('on', i === a && v.state.status !== 'idle'));
+  }
+
+  private setPrimary(btn: HTMLButtonElement, b: PanelButton | null) {
+    btn.hidden = !b;
+    if (!b) return;
+    btn.textContent = b.label;
+    btn.dataset.tip = b.tip;
+    // aria-disabled (not disabled) so the tooltip can still explain why.
+    btn.setAttribute('aria-disabled', String(b.disabled));
+    btn.classList.toggle('busy', b.busy);
+  }
+
+  private renderMenus(v: PlayerView) {
+    // Pace
+    const paces = v.paces;
+    const pi = Math.max(0, paces.indexOf(v.pace));
+    const pct = (i: number) => (paces.length > 1 ? (i / (paces.length - 1)) * 100 : 0);
+    this.els.bigPace!.textContent = `${v.pace}×`;
+    this.els.paceWord!.textContent = paces.length === PACE_WORDS.length ? PACE_WORDS[pi]! : '';
+    this.els.slFill!.style.width = `${pct(pi)}%`;
+    this.els.slKnob!.style.left = `${pct(pi)}%`;
+    if (this.els.slStops!.childElementCount !== paces.length) {
+      this.els.slStops!.replaceChildren(...paces.map((_, i) => Object.assign(document.createElement('span'), { className: 'stop', style: `left:${pct(i)}%` })));
+      this.els.slLabels!.replaceChildren(...paces.map((p, i) => Object.assign(document.createElement('span'), { textContent: `${p}×`, style: `left:${pct(i)}%` })));
+    }
+    this.els.slStops!.childNodes.forEach((n, i) => (n as HTMLElement).classList.toggle('on', i <= pi));
+    this.els.slLabels!.childNodes.forEach((n, i) => (n as HTMLElement).classList.toggle('on', i === pi));
+
+    // Voice list (reading voice or one of the podcast hosts)
+    const m = this.menu;
+    const host = m === 'hostA' || m === 'hostB';
+    if (m !== 'voice' && !host) return;
+    const selected = host ? (m === 'hostA' ? v.podcast?.hostA : v.podcast?.hostB) ?? '' : v.voice;
+    const list = host ? v.podcast?.voices ?? [] : v.voices.includes(v.voice) ? v.voices : [v.voice, ...v.voices];
+    this.els.voiceTitle!.textContent = m === 'hostA' ? 'Host 1 voice' : m === 'hostB' ? 'Host 2 voice' : 'Reading voice';
+    const key = `${m}|${selected}|${list.length}`;
+    const vlist = this.els.vlist!;
+    if (vlist.dataset.key === key) return;
+    vlist.dataset.key = key;
+    const keepScroll = vlist.scrollTop;
+    vlist.replaceChildren(
+      ...list.map((id) => {
+        const row = document.createElement('div');
+        row.className = `vrow${id === selected ? ' on' : ''}`;
+        const [name, ...style] = prettyVoice(id).split(' · ');
+        row.innerHTML = '<button class="pick" role="radio"><span class="radio"><i></i></span><span class="nm"></span><em></em></button><button class="pv" aria-label="Preview voice">' + icon('play') + '</button>';
+        q(row, '.nm').textContent = name ?? id;
+        q(row, 'em').textContent = style.join(' · ');
+        row.querySelector('.pick')!.setAttribute('aria-checked', String(id === selected));
+        row.querySelector('.pick')!.addEventListener('click', () => {
+          if (m === 'hostA') this.h.setHost('A', id);
+          else if (m === 'hostB') this.h.setHost('B', id);
+          else this.h.setVoice(id);
+        });
+        row.querySelector('.pv')!.addEventListener('click', () => this.h.previewVoice(id));
+        return row;
+      }),
+    );
+    vlist.scrollTop = keepScroll;
+  }
+
+  private setupSlider() {
+    const sl = this.els.sl!;
+    const pick = (e: PointerEvent) => {
+      const paces = this.view?.paces ?? [];
+      if (paces.length < 2) return;
+      const r = sl.getBoundingClientRect();
+      const i = Math.round(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (paces.length - 1));
+      if (paces[i] !== this.view?.pace) this.h.setPace(paces[i]!);
+    };
+    sl.addEventListener('pointerdown', (e) => {
+      sl.setPointerCapture?.(e.pointerId);
+      this.paceDrag = true;
+      sl.classList.add('drag');
+      pick(e);
+    });
+    sl.addEventListener('pointermove', (e) => this.paceDrag && pick(e));
+    const end = () => { this.paceDrag = false; sl.classList.remove('drag'); };
+    sl.addEventListener('pointerup', end);
+    sl.addEventListener('pointercancel', end);
+  }
+
+  /** Drag by any grip; the player stays anchored by its bottom-right corner. */
+  private setupDrag() {
+    this.wrap.addEventListener('pointerdown', (e) => {
+      const grip = (e.target as HTMLElement).closest('[data-drag]');
+      if (!grip || e.button !== 0) return;
+      e.preventDefault();
+      const start = { x: e.clientX, y: e.clientY, r: parseFloat(this.wrap.style.right || '16'), b: parseFloat(this.wrap.style.bottom || '16') };
+      const move = (ev: PointerEvent) => {
+        const box = this.rect;
+        const maxR = window.innerWidth - (box?.width ?? 0);
+        const maxB = window.innerHeight - (box?.height ?? 0);
+        this.wrap.style.right = `${Math.min(Math.max(0, start.r - (ev.clientX - start.x)), Math.max(0, maxR))}px`;
+        this.wrap.style.bottom = `${Math.min(Math.max(0, start.b - (ev.clientY - start.y)), Math.max(0, maxB))}px`;
+        this.repositionTip();
+      };
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
   }
 
   /**
@@ -554,7 +981,6 @@ export class PlayerBar {
       tip.textContent = el.dataset.tip ?? '';
       const w = wrap.getBoundingClientRect();
       const r = el.getBoundingClientRect();
-      // Centre above the control, kept inside the viewport.
       const half = tip.offsetWidth / 2;
       const x = Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8);
       tip.style.left = `${x - w.left}px`;
@@ -596,21 +1022,17 @@ export class PlayerBar {
     });
   }
 
-  private renderChat(items: TranscriptItem[] | null, names: { left: string; right: string } | null, index: number) {
-    const chat = this.els.chat!;
+  private renderChat(items: TranscriptItem[] | null, index: number) {
     const box = this.els.transcript!;
-    chat.hidden = !items?.length;
-    this.els.nameLeft!.textContent = names?.left ?? '';
-    this.els.nameRight!.textContent = names?.right ?? '';
     if (items !== this.renderedTranscript) {
       this.renderedTranscript = items;
       this.activeTurn = -1;
       box.replaceChildren(
         ...(items ?? []).map((t) => {
           const b = document.createElement('button');
-          b.className = `msg ${t.side}`;
+          b.className = `msg ${t.side === 'right' ? 'right' : 'left'}`;
           b.setAttribute('role', 'listitem');
-          b.dataset.tip = t.side === 'full' ? 'Read from here' : 'Play from here';
+          b.dataset.tip = 'Play from here';
           b.textContent = t.text;
           b.addEventListener('click', () => this.h.playFrom(t.start));
           return b;
@@ -618,8 +1040,7 @@ export class PlayerBar {
       );
     }
     if (!items?.length) return;
-    let active = 0;
-    for (let i = 0; i < items.length; i++) if (items[i]!.start <= index) active = i;
+    const active = this.turnIndex(items, index);
     if (active === this.activeTurn) return;
     box.children[this.activeTurn]?.classList.remove('on');
     const el = box.children[active] as HTMLElement | undefined;
@@ -628,16 +1049,6 @@ export class PlayerBar {
     // Keep the current message in the clear (unfaded) area without scrolling the page.
     if (el && !this.pointerInTranscript) box.scrollTo({ top: el.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
   }
-}
-
-function renderButton(btn: HTMLButtonElement, b: PanelButton | null) {
-  btn.hidden = !b;
-  if (!b) return;
-  btn.textContent = b.label;
-  btn.dataset.tip = b.tip;
-  // aria-disabled (not disabled) so the tooltip can still explain why.
-  btn.setAttribute('aria-disabled', String(b.disabled));
-  btn.classList.toggle('busy', b.busy);
 }
 
 function attachStyles(root: ShadowRoot, css: string) {

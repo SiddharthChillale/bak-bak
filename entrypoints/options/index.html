@@ -8,119 +8,165 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <main>
-      <h1>Read Aloud Settings</h1>
+    <div class="shell">
+      <aside>
+        <div class="brand">
+          <img src="/icon/96.png" alt="" />
+          <div><b>Read Aloud</b><span>Settings</span></div>
+        </div>
+        <nav id="nav">
+          <span class="navthumb" id="navThumb"></span>
+          <a href="#sec-setup">Setup</a>
+          <a href="#sec-voice">Voice</a>
+          <a href="#sec-reading">Reading</a>
+          <a href="#sec-podcast">Podcast</a>
+          <a href="#sec-usage">Usage &amp; cache</a>
+          <a href="#voiceLab" id="navLab">Voice lab</a>
+        </nav>
+        <div class="saved"><span class="dot"></span><span id="saved" aria-live="polite">All changes save automatically</span></div>
+      </aside>
 
-      <section>
-        <h2>Sarvam</h2>
-        <label>API key
-          <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_…" />
-        </label>
-        <p class="hint">Stored in this browser's local extension storage only. Get one at dashboard.sarvam.ai.</p>
-        <div class="grid">
-          <label>Model
-            <select id="model">
+      <main>
+        <section id="sec-setup" class="stack">
+          <div class="intro">
+            <h1>Listen to any article.</h1>
+            <p class="muted">Read Aloud uses Sarvam AI's Bulbul voices. Add your own API key once; you pay Sarvam directly for what you listen to.</p>
+          </div>
+          <div class="steps">
+            <div class="step" id="step1"><span class="n">1</span><div><b>Add your API key</b><small>Free credits on new accounts</small></div></div>
+            <div class="step"><span class="n blue">2</span><div><b>Pick a voice</b><small>Preview any voice below</small></div></div>
+            <div class="step"><span class="n grey">3</span><div><b>Open an article</b><small>Toolbar button or <kbd>Alt+Shift+R</kbd></small></div></div>
+          </div>
+          <div class="field">
+            <label class="lbl" for="apiKey">(BYOK) Sarvam API key</label>
+            <div class="keyrow">
+              <div class="keybox">
+                <input id="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_…" />
+                <button type="button" class="ghost" id="toggleKey">Show</button>
+              </div>
+              <span class="badge" id="keyBadge"><span class="dot"></span><span id="keyBadgeText">Connected</span></span>
+            </div>
+            <div class="hint">Stored only in this browser's local extension storage. Get one at <a href="https://dashboard.sarvam.ai" target="_blank" rel="noreferrer">dashboard.sarvam.ai</a>.</div>
+          </div>
+        </section>
+
+        <section id="sec-voice" class="stack">
+          <h2>Voice</h2>
+          <div class="cols">
+            <div class="field"><span class="lbl">Model</span><div id="modelSeg"></div><select id="model" hidden>
               <option value="bulbul:v4-flash">bulbul:v4-flash</option>
               <option value="bulbul:v3">bulbul:v3</option>
-            </select>
-          </label>
-          <label>Voice <select id="voice"></select></label>
-          <label>Speed (Sarvam pace)
-            <select id="pace"></select>
-          </label>
-          <label>Transport
-            <select id="transport">
+            </select></div>
+            <div class="field"><span class="lbl">Reading voice</span><div id="voiceMenu"></div><select id="voice" hidden></select></div>
+          </div>
+          <div class="field">
+            <div class="lblrow"><span class="lbl">Speed</span><span class="hint">Applies from the next sentence</span></div>
+            <div id="paceSeg"></div><select id="pace" hidden></select>
+          </div>
+          <div class="rowline">
+            <div><div class="lbl">Transport</div><div class="hint">Streaming starts playback sooner.</div></div>
+            <div id="transportSeg" class="w220"></div>
+            <select id="transport" hidden>
               <option value="stream">HTTP stream</option>
               <option value="rest">REST</option>
             </select>
-          </label>
-        </div>
-        <p id="saved" class="hint" aria-live="polite"></p>
-      </section>
+          </div>
+        </section>
 
-      <section>
-        <h2>Reading</h2>
-        <div class="grid">
-          <label>Pause between sentences (ms)
-            <input id="sentencePauseMs" type="number" min="0" max="2000" step="50" />
-          </label>
-          <label>Pause between paragraphs (ms)
-            <input id="paragraphPauseMs" type="number" min="0" max="3000" step="50" />
-          </label>
-          <label>Sentences prepared ahead
-            <input id="prefetch" type="number" min="0" max="5" step="1" />
-          </label>
-        </div>
-        <div class="grid">
-          <label>Ask before reading articles longer than (characters, 0 = never)
-            <input id="confirmAboveChars" type="number" min="0" max="500000" step="1000" />
-          </label>
-        </div>
-        <label class="check"><input id="autoDetect" type="checkbox" /> Detect articles automatically on every site</label>
-        <p class="hint">Off by default: the extension only runs on a page when you click its button, use its menu or a
-          shortcut. Turning this on asks your browser for access to all sites so it can mark readable pages with a dot on
-          the toolbar icon and let you Alt+click a sentence before opening the player. Page text is still only sent to
-          Sarvam when you press play.</p>
-        <label class="check"><input id="resume" type="checkbox" /> Continue where I stopped when I reopen an article</label>
-        <label class="check"><input id="autoscroll" type="checkbox" /> Scroll to follow the sentence being read</label>
-        <label class="check"><input id="skipCode" type="checkbox" /> Skip code blocks</label>
-        <label class="check"><input id="skipTables" type="checkbox" /> Skip tables</label>
-        <label class="check"><input id="skipEmbeds" type="checkbox" /> Skip link previews and embeds (another page's headline and summary)</label>
-        <label class="check"><input id="skipCaptions" type="checkbox" /> Skip image captions</label>
-        <p class="hint">Shortcuts: Alt+Shift+R read / play-pause · Alt+Shift+. next sentence · Alt+Shift+, previous sentence.
-          Alt+click any sentence on the page to read from there. Change shortcuts in your browser's extension shortcut settings.</p>
-      </section>
+        <section id="sec-reading" class="stack">
+          <h2>Reading</h2>
+          <div class="tiles">
+            <label class="tile"><span>Pause between sentences</span>
+              <span class="num"><input id="sentencePauseMs" type="number" min="0" max="2000" step="50" /><em>ms</em></span></label>
+            <label class="tile"><span>Pause between paragraphs</span>
+              <span class="num"><input id="paragraphPauseMs" type="number" min="0" max="3000" step="50" /><em>ms</em></span></label>
+            <div class="tile"><span>Sentences prepared ahead</span>
+              <span class="stepper">
+                <button type="button" id="preDec" aria-label="Fewer">−</button>
+                <b id="preVal">2</b>
+                <button type="button" id="preInc" aria-label="More">+</button>
+              </span>
+              <input id="prefetch" type="number" min="0" max="5" step="1" hidden />
+            </div>
+            <label class="tile"><span>Ask before reading longer than</span>
+              <span class="num"><input id="confirmAboveChars" type="number" min="0" max="500000" step="1000" /><em>chars</em></span></label>
+          </div>
+          <div class="toggles">
+            <label class="toggle"><span><b>Detect articles automatically</b><small>Marks readable pages with a dot on the toolbar icon. Asks for access to all sites; text is still only sent when you press play.</small></span><input id="autoDetect" type="checkbox" /></label>
+            <label class="toggle"><span><b>Continue where I stopped</b><small>Reopen an article and pick up from your last sentence.</small></span><input id="resume" type="checkbox" /></label>
+            <label class="toggle"><span><b>Follow along</b><small>Scroll the page to keep the sentence being read in view.</small></span><input id="autoscroll" type="checkbox" /></label>
+            <label class="toggle"><span><b>Skip code blocks</b></span><input id="skipCode" type="checkbox" /></label>
+            <label class="toggle"><span><b>Skip tables</b></span><input id="skipTables" type="checkbox" /></label>
+            <label class="toggle"><span><b>Skip link previews and embeds</b><small>Another page's headline and summary.</small></span><input id="skipEmbeds" type="checkbox" /></label>
+            <label class="toggle"><span><b>Skip image captions</b></span><input id="skipCaptions" type="checkbox" /></label>
+          </div>
+          <div class="keys">
+            <span><kbd>Alt+Shift+R</kbd>Read / play-pause</span>
+            <span><kbd>Alt+Shift+.</kbd>Next sentence</span>
+            <span><kbd>Alt+Shift+,</kbd>Previous sentence</span>
+            <span><kbd>Alt+click</kbd>Read from a sentence</span>
+          </div>
+        </section>
 
-      <section>
-        <h2>Podcast</h2>
-        <p class="hint">Turns an article into a conversation between two hosts: Sarvam-105B writes the script
-          (about ₹0.25 per article), then the hosts' voices read it (₹30 per 10,000 characters, like normal reading).
-          Switch the player to <b>Podcast</b> (or right-click the page → “Make a podcast from this page…”), pick the two
-          hosts there, press <b>Write script</b>, then <b>Generate audio</b>. Nothing is generated until you press those buttons.</p>
-        <div class="grid">
-          <label>Length
-            <select id="podcastLength">
-              <option value="short">Short (~5 min)</option>
-              <option value="standard">Standard (~10 min)</option>
+        <section id="sec-podcast" class="stack">
+          <div class="intro">
+            <h2>Podcast</h2>
+            <p class="muted">Two hosts talk the article through. Sarvam-105B writes the script (about ₹0.25), then the hosts' voices read it. Nothing is generated until you press <b>Write script</b> and <b>Generate audio</b> in the player.</p>
+          </div>
+          <div class="cols">
+            <div id="hostAMenu"></div>
+            <div id="hostBMenu"></div>
+          </div>
+          <select id="hostA" hidden></select>
+          <select id="hostB" hidden></select>
+          <div class="rowline">
+            <div><div class="lbl">Length</div><div class="hint">Scripts are cached, so reopening doesn't rewrite them.</div></div>
+            <div id="lengthSeg" class="w280"></div>
+            <select id="podcastLength" hidden>
+              <option value="short">Short · ~5 min</option>
+              <option value="standard">Standard · ~10 min</option>
             </select>
-          </label>
-          <label>Host 1 (lead) <select id="hostA"></select></label>
-          <label>Host 2 (co-host) <select id="hostB"></select></label>
-        </div>
-        <p class="hint">These are the same host choices as in the player, saved per model. Scripts are cached, so reopening a podcast doesn't rewrite it.</p>
-      </section>
+          </div>
+        </section>
 
-      <section>
-        <h2>Usage &amp; cache</h2>
-        <div class="stats" id="usage"></div>
-        <p class="hint">Estimated at ₹30 per 10,000 characters (Bulbul v3 list price). Cached sentences are not billed again.</p>
-        <div class="row">
-          <label>Cache limit (MB) <input id="cacheLimitMb" type="number" min="20" max="2000" step="10" /></label>
-        </div>
-        <div class="row">
-          <span id="cacheStats" class="hint"></span>
-          <button id="clearCache">Clear cached audio</button>
-        </div>
-      </section>
+        <section id="sec-usage" class="stack">
+          <div class="lblrow"><h2>Usage &amp; cache</h2><span class="hint" id="month"></span></div>
+          <div class="stats" id="usage"></div>
+          <div class="cache">
+            <div class="cacherow">
+              <b class="lbl">Cached audio</b>
+              <span class="hint" id="cacheStats"></span>
+              <span class="grow"></span>
+              <label class="limit">Limit<input id="cacheLimitMb" type="number" min="20" max="2000" step="10" />MB</label>
+              <button type="button" class="danger" id="clearCache">Clear cached audio</button>
+            </div>
+            <div class="bar"><div id="cacheBar"></div></div>
+          </div>
+          <div class="hint">Estimated at ₹30 per 10,000 characters (Bulbul v3 list price). Cached sentences are not billed again.</div>
+        </section>
 
-      <section id="voiceLab" hidden>
-        <h2>Voice lab</h2>
-        <label>Sample text
+        <section id="voiceLab" class="stack" hidden>
+          <div class="intro">
+            <h2>Voice lab</h2>
+            <p class="muted">Hear voices on your own text and compare latency.</p>
+          </div>
           <textarea id="sample" rows="3">The monsoon arrived early this year, and with it came a quiet relief across the city. Shopkeepers rolled up their shutters at 7:30 a.m., chai stalls filled up by eight, and the traffic on MG Road was, for once, almost bearable.</textarea>
-        </label>
-        <p class="hint" id="cost"></p>
-        <div class="row">
-          <button id="play">▶ Play selected voice</button>
-          <button id="audition">▶ Audition reading shortlist</button>
-          <button id="latency">⏱ Latency test (REST vs stream ×3)</button>
-          <button id="stop">■ Stop</button>
-        </div>
-        <table>
-          <thead><tr><th>Voice</th><th>Transport</th><th>Headers</th><th>First byte</th><th>Total</th><th>Audio</th><th></th></tr></thead>
-          <tbody id="results"></tbody>
-        </table>
-      </section>
-    </main>
+          <div class="hint" id="cost"></div>
+          <div class="btns">
+            <button type="button" class="solid" id="play">▶ Play selected voice</button>
+            <button type="button" id="audition">Audition shortlist</button>
+            <button type="button" id="latency">Latency test · REST vs stream ×3</button>
+            <button type="button" class="ghost" id="stop">Stop</button>
+          </div>
+          <div class="tablewrap">
+            <table>
+              <thead><tr><th>Voice</th><th>Transport</th><th>Headers</th><th>First byte</th><th>Total</th><th>Audio</th><th></th></tr></thead>
+              <tbody id="results"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

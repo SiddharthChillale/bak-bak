@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the extension icon (play mark + sound waves on a terracotta tile).
+"""Render the extension icon (play mark + sound waves on a blue tile).
 
     python3 scripts/make-icons.py      # writes public/icon/{16,32,48,96,128}.png
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 SIZE = 1024
-BG = (180, 83, 42, 255)  # matches the player's accent (#b4532a)
+BG = (39, 144, 196, 255)  # matches the player's accent (#2790c4)
 FG = (255, 253, 249, 255)
 OUT = Path(__file__).resolve().parent.parent / "public" / "icon"
 

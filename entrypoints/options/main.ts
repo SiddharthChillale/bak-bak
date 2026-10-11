@@ -2,7 +2,7 @@ import { browser } from '#imports';
 import { cacheClear, cacheStats, evict } from '@/lib/cache';
 import { ALL_SITES } from '@/lib/inject';
 import { VOICE_LAB } from '@/lib/features';
-import type { SarvamModel, Transport } from '@/lib/sarvam';
+import { synthesize, type SarvamModel, type Transport } from '@/lib/sarvam';
 import {
   SPEED_STEPS,
   apiKeyItem,
@@ -18,9 +18,10 @@ import {
   voiceItem,
   type ReadingPrefs,
 } from '@/lib/settings';
-import { formatInr, monthKey, usageItem } from '@/lib/usage';
+import { formatInr, monthKey, recordUsage, usageItem } from '@/lib/usage';
 import { DEFAULT_VOICE, READING_SHORTLIST, prettyVoice, voicesFor } from '@/lib/voices';
 import { initVoiceLab } from './voice-lab';
+import { segmented, syncWidgets, voiceMenu } from './widgets';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const apiKey = $<HTMLInputElement>('apiKey');
@@ -46,6 +47,90 @@ const prefInputs = {
   skipCaptions: $<HTMLInputElement>('skipCaptions'),
 };
 
+// ---- widgets -------------------------------------------------------------
+
+// The pace options never change, so fill them before the segmented control is built.
+pace.replaceChildren(...SPEED_STEPS.map((p) => new Option(`${p}×`, String(p))));
+
+const SAMPLE = 'The quiet return of the night train. Across Europe, sleeper services are filling up again.';
+let previewAudio: HTMLAudioElement | null = null;
+async function previewVoice(voiceId: string) {
+  previewAudio?.pause();
+  if (!apiKey.value.trim()) {
+    saved.textContent = 'Add your Sarvam API key to preview voices.';
+    return;
+  }
+  saved.textContent = 'Loading preview…';
+  try {
+    const result = await synthesize(apiKey.value.trim(), {
+      text: SAMPLE,
+      model: model.value as SarvamModel,
+      speaker: voiceId,
+      transport: transport.value as Transport,
+      pace: Number(pace.value) || 1,
+    });
+    void recordUsage(SAMPLE.length, false);
+    previewAudio = new Audio(URL.createObjectURL(new Blob([result.audio as BlobPart], { type: result.mime })));
+    await previewAudio.play();
+    saved.textContent = 'Playing preview';
+  } catch (e) {
+    saved.textContent = (e as Error).message;
+  }
+}
+
+segmented(model, $('modelSeg'), { mono: true });
+segmented(pace, $('paceSeg'), { accent: true });
+segmented(transport, $('transportSeg'));
+segmented(podcastLength, $('lengthSeg'));
+voiceMenu(voice, $('voiceMenu'), { onPreview: previewVoice });
+voiceMenu(hostA, $('hostAMenu'), { card: { caption: 'Host 1 · lead', tone: 'a' }, onPreview: previewVoice });
+voiceMenu(hostB, $('hostBMenu'), { card: { caption: 'Host 2 · co-host', tone: 'b' }, onPreview: previewVoice });
+
+const keyInput = apiKey;
+$('toggleKey').addEventListener('click', () => {
+  const show = keyInput.type === 'password';
+  keyInput.type = show ? 'text' : 'password';
+  $('toggleKey').textContent = show ? 'Hide' : 'Show';
+});
+function refreshKeyState() {
+  const has = apiKey.value.trim().length > 0;
+  $('keyBadge').classList.toggle('off', !has);
+  $('keyBadgeText').textContent = has ? 'Key saved' : 'No key yet';
+  $('step1').classList.toggle('done', has);
+}
+apiKey.addEventListener('input', refreshKeyState);
+
+const prefetchInput = prefInputs.prefetch;
+function refreshPrefetch() {
+  $('preVal').textContent = prefetchInput.value;
+}
+for (const [id, d] of [['preDec', -1], ['preInc', 1]] as const) {
+  $(id).addEventListener('click', () => {
+    prefetchInput.value = String(Math.min(5, Math.max(0, (Number(prefetchInput.value) || 0) + d)));
+    refreshPrefetch();
+    prefetchInput.dispatchEvent(new Event('change'));
+  });
+}
+
+// Sidebar: the highlight follows the section in view.
+const navLinks = [...document.querySelectorAll<HTMLAnchorElement>('nav a')];
+function setNav(i: number) {
+  navLinks.forEach((a, j) => a.classList.toggle('on', j === i));
+  $('navThumb').style.top = `${i * 36}px`;
+}
+const navTargets = () => navLinks.map((a) => document.getElementById(a.hash.slice(1))!);
+function spy() {
+  const targets = navTargets();
+  let active = 0;
+  targets.forEach((t, i) => {
+    if (t && !t.hidden && t.getBoundingClientRect().top <= window.innerHeight * 0.35) active = i;
+  });
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) active = targets.reduce((n, t, i) => (t ? i : n), 0);
+  setNav(active);
+}
+window.addEventListener('scroll', spy, { passive: true });
+setNav(0);
+
 function fillVoices(m: SarvamModel, selected?: string) {
   const list = voicesFor(m);
   const shortlist = new Set(READING_SHORTLIST[m]);
@@ -55,6 +140,7 @@ function fillVoices(m: SarvamModel, selected?: string) {
       .map((v) => new Option(`${shortlist.has(v) ? '★ ' : ''}${prettyVoice(v)}`, v)),
   );
   voice.value = selected && list.includes(selected) ? selected : DEFAULT_VOICE[m];
+  syncWidgets();
 }
 
 async function fillHosts() {
@@ -65,6 +151,7 @@ async function fillHosts() {
     sel.value = id;
   }
   podcastLength.value = prefs.length;
+  syncWidgets();
 }
 
 async function savePodcast() {
@@ -108,7 +195,6 @@ async function load() {
   model.value = await modelItem.getValue();
   fillVoices(model.value as SarvamModel, await voiceItem.getValue());
   transport.value = await transportItem.getValue();
-  pace.replaceChildren(...SPEED_STEPS.map((p) => new Option(`${p}×`, String(p))));
   pace.value = String(await paceItem.getValue());
   const prefs = await getPrefs();
   prefInputs.sentencePauseMs.value = String(prefs.sentencePauseMs);
@@ -124,6 +210,9 @@ async function load() {
   cacheLimit.value = String(await cacheLimitMbItem.getValue());
   await fillHosts();
   await refreshAutoDetect();
+  refreshKeyState();
+  refreshPrefetch();
+  syncWidgets();
   void refreshStats();
 }
 
@@ -163,8 +252,8 @@ for (const el of [apiKey, model, voice, transport, pace, cacheLimit, ...Object.v
   el.addEventListener('change', save);
 }
 // Keep in sync when the player bar changes voice/speed.
-voiceItem.watch((v) => (voice.value = v));
-paceItem.watch((p) => (pace.value = String(p)));
+voiceItem.watch((v) => { voice.value = v; syncWidgets(); });
+paceItem.watch((p) => { pace.value = String(p); syncWidgets(); });
 
 async function refreshStats() {
   const usage = (await usageItem.getValue())[monthKey()] ?? { billedChars: 0, requests: 0, cachedChars: 0 };
@@ -176,12 +265,16 @@ async function refreshStats() {
     return div;
   };
   $('usage').replaceChildren(
-    statEl(formatInr(usage.billedChars), 'estimated spend this month'),
-    statEl(usage.billedChars.toLocaleString(), 'characters billed this month'),
-    statEl(usage.requests.toLocaleString(), 'Sarvam requests this month'),
-    statEl(usage.cachedChars.toLocaleString(), 'characters served from cache'),
+    statEl(formatInr(usage.billedChars), 'Estimated spend'),
+    statEl(usage.billedChars.toLocaleString(), 'Characters billed'),
+    statEl(usage.requests.toLocaleString(), 'Sarvam requests'),
+    statEl(usage.cachedChars.toLocaleString(), 'Served from cache'),
   );
-  $('cacheStats').textContent = `${stats.entries.toLocaleString()} sentences cached · ${(stats.bytes / 1024 / 1024).toFixed(1)} MB`;
+  const limitMb = num(cacheLimit, 20, 2000, 200);
+  const mb = stats.bytes / 1024 / 1024;
+  $('month').textContent = new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  $('cacheStats').textContent = `${stats.entries.toLocaleString()} sentences · ${mb.toFixed(1)} MB of ${limitMb} MB`;
+  $('cacheBar').style.width = `${Math.min(100, (mb / limitMb) * 100)}%`;
 }
 
 usageItem.watch(() => void refreshStats());
@@ -196,5 +289,8 @@ cacheLimit.addEventListener('change', async () => {
 
 void load().then(() => {
   if (VOICE_LAB) initVoiceLab({ apiKey, model, voice, transport, pace, saved });
-  else $('voiceLab').remove();
+  else {
+    $('voiceLab').remove();
+    $('navLab').remove();
+  }
 });

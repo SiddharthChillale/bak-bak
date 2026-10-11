@@ -27,6 +27,13 @@ export default defineConfig({
     permissions: ['storage', 'contextMenus', 'activeTab', 'scripting'],
     host_permissions: ['https://api.sarvam.ai/*'],
     optional_host_permissions: ['<all_urls>'],
+    // The player (injected into pages) loads its bundled fonts from here.
+    web_accessible_resources: [
+      {
+        resources: ['fonts/*.woff2'],
+        matches: ['<all_urls>'],
+      },
+    ],
     commands: {
       'toggle-reading': {
         suggested_key: { default: 'Alt+Shift+R' },
