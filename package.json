@@ -3,6 +3,7 @@
   "description": "Listen to any web article in natural Indian-English voices (Sarvam AI), with sentence highlighting, jump-to-line and a two-host podcast mode.",
   "private": true,
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "type": "module",
   "repository": {
     "type": "git",

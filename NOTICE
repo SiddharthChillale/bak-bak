@@ -1,0 +1,15 @@
+Read Aloud
+Copyright 2026 Siddharth Chillale
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes the following third-party software and assets:
+
+- Mozilla Readability (https://github.com/mozilla/readability)
+  Copyright (c) 2010 Arc90 Inc. and contributors. Apache License 2.0.
+
+- Instrument Sans, Newsreader and IBM Plex Mono fonts (public/fonts)
+  SIL Open Font License 1.1; see the OFL-*.txt files beside each font.
+
+Voices and language models are provided by Sarvam AI (https://www.sarvam.ai/) through
+its API. This project is not affiliated with Sarvam AI.

@@ -15,6 +15,8 @@
   <img alt="Chrome" src="https://img.shields.io/badge/Chrome-supported-4285F4" />
   <img alt="Firefox" src="https://img.shields.io/badge/Firefox-140%2B-FF7139" />
   <img alt="Safari" src="https://img.shields.io/badge/Safari-26%2B-0FB5EE" />
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue" /></a>
+  <a href="https://github.com/sponsors/SiddharthChillale"><img alt="Sponsor" src="https://img.shields.io/badge/sponsor-%E2%9D%A4-db61a2" /></a>
 </p>
 
 ---
@@ -157,7 +159,23 @@ The [Release workflow](.github/workflows/release.yml) checks the tag matches the
 all three packs plus the Firefox source bundle, and publishes them on the
 [Releases page](https://github.com/SiddharthChillale/web-readaloud-extension/releases).
 
+## Contributing
+
+Contributions are welcome: bug reports, pages it reads badly, fixes and features. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md), and please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Questions and
+ideas go in [Discussions](https://github.com/SiddharthChillale/web-readaloud-extension/discussions); security
+problems go through private reporting (see [SECURITY.md](SECURITY.md)).
+
+## Sponsor
+
+Read Aloud is free and open source. If it's useful to you, or you'd like to work with me,
+[sponsor me on GitHub](https://github.com/sponsors/SiddharthChillale).
+
 ## Credits
 
 Voices and podcast scripts by [Sarvam AI](https://www.sarvam.ai/). Article extraction by
 [Mozilla Readability](https://github.com/mozilla/readability). Not affiliated with Sarvam AI.
+
+## License
+
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for third-party credits.
