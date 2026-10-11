@@ -35,19 +35,46 @@ const MAX_TOKENS = 4000;
 export function buildMessages(req: ScriptRequest) {
   const { A, B } = req.hosts;
   const words = TARGET_WORDS[req.length];
-  const system = [
-    'You write scripts for a two-host explainer podcast, spoken in natural Indian English.',
-    `Hosts: ${A} (speaker "A", the lead host who has read the article closely) and ${B} (speaker "B", a curious co-host who asks sharp, practical questions and reacts naturally).`,
-    'Rules:',
-    '- Use only facts from the article. Do not invent numbers, names, quotes or claims.',
-    '- Warm, conversational and clear. Short turns of 1 to 4 sentences; the hosts address each other by name now and then.',
-    '- Explain jargon and expand abbreviations the first time they appear.',
-    '- Open with a one-line hook and the article title; end with a short recap of the key takeaways.',
-    '- Plain spoken text only: no stage directions, sound effects, markdown, lists, URLs or emojis.',
-    `- Length: about ${words} words in total.`,
-    'Output ONLY a JSON object, with no text before or after it:',
-    '{"title": string, "turns": [{"speaker": "A" | "B", "text": string}]}',
-  ].join('\n');
+  // const system = [
+  //   'You write scripts for a two-host explainer podcast, spoken in natural Indian English.',
+  //   `Hosts: ${A} (speaker "A", the lead host who has read the article closely) and ${B} (speaker "B", a curious co-host who asks sharp, practical questions and reacts naturally).`,
+  //   'Rules:',
+  //   '- Use only facts from the article. Do not invent numbers, names, quotes or claims.',
+  //   '- Warm, conversational and clear. Short turns of 1 to 4 sentences; the hosts address each other by name now and then.',
+  //   '- Explain jargon and expand abbreviations the first time they appear.',
+  //   '- Open with a one-line hook and the article title; end with a short recap of the key takeaways.',
+  //   '- Plain spoken text only: no stage directions, sound effects, markdown, lists, URLs or emojis.',
+  //   `- Length: about ${words} words in total.`,
+  //   'Output ONLY a JSON object, with no text before or after it:',
+  //   '{"title": string, "turns": [{"speaker": "A" | "B", "text": string}]}',
+  // ].join('\n');
+  const podcast_prompt = `Act as an expert AI podcast scriptwriter and audio director.
+  Your task is to write a natural, engaging, two-person conversational podcast script (style similar to Google NotebookLM Audio Overviews or Google AI Studio multi-speaker formats).
+
+  ### Context & Topic
+  - Topic / Source Material: [Insert your topic, notes, article, or paste text here]
+  - Target Duration: [e.g., 5 to 7 minutes / ~800 to 1,000 words]
+  - Target Audience Level: [Beginner / Intermediate / Deep Dive]
+
+  ### Host Roles & Voices
+  - Speaker 1 (Host ${A} / Curious Lead): Energetic, asks the questions the listener is thinking, frames the big picture, uses relatable analogies.
+  - Speaker 2 (Host ${B} / Subject Expert): Knowledgeable, breaks down complex ideas simply, reacts naturally, adds depth without sounding like a textbook.
+
+  ### Formatting & Audio Cues
+  - Use spoken-word formatting: short sentences, conversational interruptions ("Right," "Wait—so you're saying..."), natural laughs or brief thinking pauses.
+  - Include subtle audio or delivery cues in brackets where helpful, such as [pause], [chuckle], or [empathetic tone].
+  - Avoid formal essay structures, rigid bullet-point readouts, or robotic transitions ("In conclusion...", "Moving on to point number two...").
+
+  ### Structure Requirements
+  1. Cold Open: Jump straight into a surprising hook, a weird fact, or a relatable scenario from the source material—no generic "Welcome back to the show!".
+  2. Context Setting: Quickly establish why this topic matters right now.
+  3. Core Exploration: Back-and-forth breakdown of the 2-3 most important takeaways, using a real-world analogy.
+  4. Perspective Shift: A moment where one host challenges an assumption or looks at the flip side of the topic.
+  5. Reflective Close: A quick, punchy takeaway or actionable thought for the listener to walk away with.
+  Output ONLY a JSON object, with no text before or after it:,
+
+  {"title": string, "turns": [{"speaker": "A" | "B", "text": string}]}`
+  const system = podcast_prompt;
   const article = req.text.length > MAX_ARTICLE_CHARS ? `${req.text.slice(0, MAX_ARTICLE_CHARS)}\n[…truncated]` : req.text;
   const user = `Article title: ${req.title}\n\nArticle:\n${article}`;
   return [
