@@ -129,6 +129,22 @@ pnpm zip:all          # release packs for Chrome, Firefox, Safari → .output/
 
 `pnpm package:safari` wraps the Safari build in a macOS app (needs Xcode) so it stays installed.
 
+### Feature flags
+
+Some features are switched on or off when the extension is built, not in its settings. Set the flag in the
+environment or in a `.env` / `.env.local` file (git-ignored). Unset flags are **on** for `pnpm dev` and **off** for
+`pnpm build` / `pnpm zip*`, including the Release workflow.
+
+| Flag | Feature |
+|---|---|
+| `WXT_VOICE_LAB` | Voice lab on the options page (sample playback, voice audition, latency test) |
+
+```bash
+WXT_VOICE_LAB=true pnpm zip:all
+```
+
+When a flag is off, its code is left out of the build entirely.
+
 ### Releasing
 
 Bump `version` in `package.json`, commit, then tag and push:

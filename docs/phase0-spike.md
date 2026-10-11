@@ -26,6 +26,7 @@ pnpm build:safari     # Safari  → .output/safari-mv3
   websites when Safari asks.
 
 Then open the extension's **options page** (Voice Lab), paste the Sarvam API key, and pick model/voice.
+The Voice Lab is only in dev builds or builds made with `WXT_VOICE_LAB=true` (see the README's *Feature flags*).
 
 ## Tests
 

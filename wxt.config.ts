@@ -1,9 +1,23 @@
 import { defineConfig } from 'wxt';
 
+// Build-time feature flags (no user-facing setting). Set in the environment or a .env file,
+// e.g. `WXT_VOICE_LAB=true pnpm zip`. Unset flags are on in dev and off in production builds.
+// Each is inlined as the literal 'true' or 'false' so disabled code is dropped from the bundle.
+function featureFlag(name: string, mode: string): string {
+  const value = process.env[name]?.trim();
+  const on = value ? /^(1|true|on|yes)$/i.test(value) : mode === 'development';
+  return JSON.stringify(String(on));
+}
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   // WXT defaults Firefox and Safari to MV2; we want MV3 everywhere.
   manifestVersion: 3,
+  vite: ({ mode }) => ({
+    define: {
+      'import.meta.env.WXT_VOICE_LAB': featureFlag('WXT_VOICE_LAB', mode),
+    },
+  }),
   manifest: ({ browser }) => ({
     name: 'Read Aloud (Sarvam)',
     description: 'Read web articles aloud with natural Indian-English voices from Sarvam AI.',
