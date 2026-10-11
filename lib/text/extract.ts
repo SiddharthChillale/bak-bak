@@ -28,7 +28,7 @@ export interface Chunk {
 }
 
 export interface ArticleDoc {
-  kind: 'article' | 'selection' | 'podcast';
+  kind: 'article' | 'selection' | 'podcast' | 'summary';
   title: string;
   blocks: Block[];
   chunks: Chunk[];
@@ -163,7 +163,7 @@ export function docFromTexts(kind: ArticleDoc['kind'], title: string, texts: str
   return buildDoc(kind, title, blocks);
 }
 
-/** Article text for the podcast writer: blocks as paragraphs, headings marked. */
+/** Article text for the LLM (podcast writer, summariser): blocks as paragraphs, headings marked. */
 export function articleText(doc: ArticleDoc): string {
   return doc.blocks
     .map((b) => {

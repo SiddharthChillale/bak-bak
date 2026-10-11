@@ -1,6 +1,7 @@
 import { storage } from '#imports';
 import type { PodcastLength } from './podcast';
 import type { SarvamModel, Transport } from './sarvam';
+import type { SummaryLength } from './summary';
 
 // `local:` keeps everything (including the API key) on this device only; nothing is synced.
 export const apiKeyItem = storage.defineItem<string>('local:sarvamApiKey', { fallback: '' });
@@ -88,3 +89,5 @@ export async function getPodcastPrefs(): Promise<PodcastPrefs> {
  * player). Needs the optional all-sites host permission; off by default.
  */
 export const autoDetectItem = storage.defineItem<boolean>('local:autoDetect', { fallback: false });
+
+export const summaryLengthItem = storage.defineItem<SummaryLength>('local:summaryLength', { fallback: 'brief' });

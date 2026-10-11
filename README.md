@@ -24,7 +24,8 @@ Bulbul voices, built for Indian English, so long reads sound like a person you'd
 article, press play, and it reads the story (not the menus, ads or comments) while highlighting each sentence
 as it goes.
 
-Want a different take? Switch to **Podcast** mode and two hosts of your choosing talk the article through.
+Want a different take? Switch to **Podcast** mode and two hosts of your choosing talk the article through, or to
+**Summary** mode to hear just the gist in a minute or two.
 
 ## Highlights
 
@@ -39,6 +40,8 @@ Want a different take? Switch to **Podcast** mode and two hosts of your choosing
 - **Podcast mode, on your terms.** Pick two hosts (▶ previews each voice), press **Write script** to have
   Sarvam-105B turn the article into a conversation you can read first, then press **Generate audio** to hear it.
   The transcript plays out as a chat, host 1 on the left and host 2 on the right; click any message to jump there.
+- **Summary mode for the short version.** Press **Summarize** and Sarvam-105B condenses the article into a brief
+  (~1 min) or detailed (~2 min) summary, shown in the player and read aloud in your reading voice.
 - **Pay once per sentence.** Every sentence's audio is cached on your device, so replaying, going back or
   re-jumping never costs credits twice. Long articles ask before starting and show the estimated cost.
 - **Picks up where you left off.** Reopen an article and it continues from your last sentence, with a *Start
@@ -76,6 +79,7 @@ Chrome Web Store, Firefox Add-ons and Mac App Store listings are planned.
 | Start from a particular line | **Jump to**, then click the line (Esc cancels) · or Alt+click it while the player is open |
 | Read only a selection | Select text → right-click → *Read aloud from here* |
 | Make a podcast | **Podcast** switch → choose two hosts → **Write script** → **Generate audio** |
+| Hear a summary | **Summary** switch → choose a length → **Summarize** · or right-click → *Summarize this page aloud* |
 | Back to reading the page | **Read** switch |
 
 Every control has a tooltip; hover or tab to it.
@@ -89,13 +93,14 @@ Read Aloud is free; you pay Sarvam AI directly for what you listen to, with your
 | Reading (Bulbul) | ₹30 per 10,000 characters | ~₹36 for a 2,000-word article |
 | Podcast script (Sarvam-105B) | per token | ~₹0.25 per article |
 | Podcast audio (Bulbul) | ₹30 per 10,000 characters | ~₹13–25 for a 5–10 min episode |
+| Summary (Sarvam-105B + Bulbul) | as above | ~₹2–6 per article |
 
 Cached sentences are free to replay. The Settings page shows your estimated spend this month.
 
 ## Privacy
 
-The extension only sees a page after you invoke it there, and nothing leaves your browser until you press play. Then only the text being read is sent to Sarvam AI for speech
-(and, in podcast mode, to write the script). Your key, settings, cached audio and reading positions stay in your
+The extension only sees a page after you invoke it there, and nothing leaves your browser until you press play (or **Write script** / **Summarize**). Then only the text being read is sent to Sarvam AI for speech
+(and, in podcast and summary modes, to write the script or summary). Your key, settings, cached audio and reading positions stay in your
 browser's extension storage. There's no server, analytics or tracking. See [PRIVACY.md](PRIVACY.md).
 
 ## Under the hood
@@ -106,7 +111,7 @@ Page ──► Readability picks the article ──► sentences mapped back to 
   Player (shadow DOM) ◄── Web Audio playback ◄───┤ prefetch 2 ahead, gapless scheduling
                                                  │
   Background ── cache hit? ── IndexedDB audio ───┘
-       └─ miss ──► Sarvam Bulbul TTS (and Sarvam-105B for podcast scripts)
+       └─ miss ──► Sarvam Bulbul TTS (and Sarvam-105B for podcast scripts and summaries)
 ```
 
 Built with [WXT](https://wxt.dev) and TypeScript, [Mozilla Readability](https://github.com/mozilla/readability),

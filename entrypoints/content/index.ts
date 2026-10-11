@@ -5,7 +5,7 @@ import { TTS_PORT } from '@/lib/messages';
 import { WebAudioOut, type Scheduled } from '@/lib/player/audio';
 import { PlaybackController } from '@/lib/player/controller';
 import { Highlighter } from '@/lib/player/highlight';
-import { PlayerBar, type Notice, type PlayerMode, type PodcastPanel, type TranscriptItem } from '@/lib/player/ui';
+import { PlayerBar, type Notice, type PlayerMode, type PodcastPanel, type SummaryPanel, type TranscriptItem } from '@/lib/player/ui';
 import type { PodcastLength, PodcastScript, ScriptRequest } from '@/lib/podcast';
 import { clearResume, getResume, pageKey, saveResume } from '@/lib/resume';
 import { base64ToBytes } from '@/lib/sarvam';
@@ -17,9 +17,11 @@ import {
   paceItem,
   podcastItem,
   prefsItem,
+  summaryLengthItem,
   voiceItem,
   type ReadingPrefs,
 } from '@/lib/settings';
+import type { Summary, SummaryLength, SummaryRequest } from '@/lib/summary';
 import {
   type ArticleDoc,
   articleText,
@@ -37,6 +39,8 @@ import { READING_SHORTLIST, prettyVoice, voicesFor } from '@/lib/voices';
 const CHARS_PER_SEC = 15;
 /** Sarvam-105B cost for one script is tiny; shown so the button isn't a surprise. */
 const SCRIPT_COST_TEXT = 'about ₹0.25';
+/** A summary reads the whole article but writes far less than a script. */
+const SUMMARY_COST_TEXT = 'about ₹0.10';
 
 export default defineContentScript({
   // Injected by the background when the user invokes the extension (activeTab), or
@@ -97,14 +101,31 @@ interface PodState {
   token: number;
 }
 
+/** Summary mode: setup (pick length) → writing → ready (summary shown and read aloud). */
+type SumStage = 'setup' | 'writing' | 'ready';
+
+interface SumState {
+  stage: SumStage;
+  length: SummaryLength;
+  /** Whether `length` has been loaded from settings. */
+  loaded: boolean;
+  /** Summary for the current article + length, once written. */
+  doc: ArticleDoc | null;
+  transcript: TranscriptItem[];
+  error: string | null;
+  /** Invalidates in-flight summary requests when the setup changes. */
+  token: number;
+}
+
 class ReaderApp {
   private mode: PlayerMode = 'article';
-  /** What the controller is playing (article, selection, or podcast script). */
+  /** What the controller is playing (article, selection, podcast script or summary). */
   private doc: ArticleDoc | null = null;
   /** Extracted article, kept so switching modes doesn't re-extract. */
   private articleDoc: ArticleDoc | null = null;
   private articleTextCache: { doc: ArticleDoc; text: string; hash: string } | null = null;
-  private positions: Record<PlayerMode, number> = { article: 0, podcast: 0 };
+  private positions: Record<PlayerMode, number> = { article: 0, podcast: 0, summary: 0 };
+  private sum: SumState = { stage: 'setup', length: 'brief', loaded: false, doc: null, transcript: [], error: null, token: 0 };
   private pod: PodState = {
     stage: 'setup',
     hosts: { A: '', B: '' },
@@ -185,7 +206,7 @@ class ReaderApp {
     await this.loadSettings();
     switch (cmd) {
       case 'toggle':
-        if (this.doc || this.mode === 'podcast') {
+        if (this.doc || this.mode !== 'article') {
           this.ensureUi().show();
           return this.onToggle();
         }
@@ -196,6 +217,8 @@ class ReaderApp {
         return this.readFromSelection();
       case 'podcast':
         return this.setMode('podcast');
+      case 'summarize':
+        return this.summarizeAndPlay();
       case 'next':
         return this.controller.next();
       case 'prev':
@@ -214,8 +237,9 @@ class ReaderApp {
     this.articleDoc = null;
     this.articleTextCache = null;
     this.mode = 'article';
-    this.positions = { article: 0, podcast: 0 };
+    this.positions = { article: 0, podcast: 0, summary: 0 };
     this.pod = { ...this.pod, stage: 'setup', doc: null, voices: [], transcript: [], error: null, token: this.pod.token + 1 };
+    this.sum = { ...this.sum, stage: 'setup', doc: null, transcript: [], error: null, token: this.sum.token + 1 };
     this.highlighter.clear();
     this.stopPick();
     this.ui?.hide();
@@ -233,10 +257,10 @@ class ReaderApp {
 
   // ---- modes ---------------------------------------------------------------
 
-  /** Switch between reading the page and the podcast. Never starts synthesis by itself. */
-  private setMode(mode: PlayerMode) {
+  /** Switch between reading the page, the podcast and the summary. Never starts synthesis by itself. */
+  private setMode(mode: PlayerMode): Promise<void> | void {
     this.ensureUi().show();
-    if (mode === this.mode && (this.doc || mode === 'podcast')) return this.render();
+    if (mode === this.mode && (this.doc || mode !== 'article')) return this.render();
     this.stopPreview();
     this.controller.stop();
     this.highlighter.clear();
@@ -256,7 +280,7 @@ class ReaderApp {
       if (this.positions.article > 0) this.controller.seek(this.positions.article);
       return;
     }
-    void this.openPodcast();
+    return mode === 'podcast' ? this.openPodcast() : this.openSummary();
   }
 
   private async openPodcast() {
@@ -339,14 +363,21 @@ class ReaderApp {
     if (this.pod.stage === 'scripted') return this.generateAudio(this.positions.podcast);
   }
 
-  private scriptRequest(): { request: ScriptRequest; key: string } | null {
+  /** Article text for the LLM, with a hash for cache keys. */
+  private articleSource(): { article: ArticleDoc; text: string; hash: string } | null {
     const article = this.articleDoc;
-    if (!article || !this.hostsValid()) return null;
+    if (!article) return null;
     if (this.articleTextCache?.doc !== article) {
       const text = articleText(article);
       this.articleTextCache = { doc: article, text, hash: hashString(text) };
     }
-    const { text, hash } = this.articleTextCache;
+    return { article, text: this.articleTextCache.text, hash: this.articleTextCache.hash };
+  }
+
+  private scriptRequest(): { request: ScriptRequest; key: string } | null {
+    const source = this.hostsValid() ? this.articleSource() : null;
+    if (!source) return null;
+    const { article, text, hash } = source;
     const names = { A: hostName(this.pod.hosts.A), B: hostName(this.pod.hosts.B) };
     if (names.A === names.B) names.B = `${names.B} Two`;
     return {
@@ -414,6 +445,126 @@ class ReaderApp {
     if (this.mode === 'podcast') this.setDoc(doc, { voices: this.pod.voices, transcript });
   }
 
+  // ---- summary -------------------------------------------------------------
+
+  private async openSummary() {
+    const article = this.articleDoc ?? this.extract();
+    if (!article) {
+      this.doc = null;
+      this.controller.load([]);
+      return this.showMessage("Couldn't find an article on this page to summarise.");
+    }
+    this.articleDoc = article;
+    if (!this.sum.loaded) {
+      this.sum.length = await summaryLengthItem.getValue();
+      this.sum.loaded = true;
+    }
+    if (this.mode !== 'summary') return;
+
+    if (this.sum.doc) {
+      this.setDoc(this.sum.doc, { transcript: this.sum.transcript });
+      if (this.positions.summary > 0) this.controller.seek(this.positions.summary);
+      return;
+    }
+    this.doc = null;
+    this.controller.load([]);
+    this.render();
+    await this.findCachedSummary();
+  }
+
+  /** Context menu: open Summary mode and read the summary, writing it first if needed. */
+  private async summarizeAndPlay() {
+    await this.setMode('summary');
+    if (this.mode !== 'summary') return;
+    if (this.sum.stage === 'ready') return this.controller.play(this.positions.summary);
+    if (this.sum.stage === 'setup') return this.writeSummary();
+  }
+
+  private summaryRequest(): { request: SummaryRequest; key: string } | null {
+    const source = this.articleSource();
+    if (!source) return null;
+    const { article, text, hash } = source;
+    return {
+      request: { title: article.title, text, length: this.sum.length },
+      key: `${pageKey()}|${this.sum.length}|${hash}`,
+    };
+  }
+
+  /** A summary for this article and length may already exist; show it without spending anything. */
+  private async findCachedSummary() {
+    const req = this.summaryRequest();
+    if (!req) return;
+    const token = this.sum.token;
+    try {
+      const summary = await this.requestSummary(req.request, req.key, true);
+      if (token === this.sum.token && this.mode === 'summary' && this.sum.stage === 'setup') this.applySummary(summary);
+    } catch {
+      // Not written yet: stay in setup.
+    }
+  }
+
+  /** Write the summary, then read it aloud (if the user is still in Summary mode). */
+  private async writeSummary() {
+    const req = this.summaryRequest();
+    if (!req) return;
+    // Still inside the click: let audio start later without another press.
+    this.audio.unlock();
+    const token = ++this.sum.token;
+    this.sum.stage = 'writing';
+    this.sum.error = null;
+    this.notice = null;
+    this.render();
+    try {
+      const summary = await this.requestSummary(req.request, req.key, false);
+      if (token !== this.sum.token) return;
+      this.applySummary(summary);
+      if (this.mode === 'summary') this.controller.play(0);
+    } catch (e) {
+      if (token !== this.sum.token) return;
+      this.sum.stage = 'setup';
+      this.sum.error = (e as Error).message;
+      this.render();
+    }
+  }
+
+  private applySummary(summary: Summary) {
+    const doc = docFromTexts('summary', summary.title, summary.paragraphs);
+    const transcript: TranscriptItem[] = [];
+    for (const c of doc.chunks) {
+      if (transcript.at(-1)?.block === c.block) continue;
+      transcript.push({ block: c.block, start: c.index, side: 'full', text: doc.blocks[c.block]!.text });
+    }
+    this.sum = { ...this.sum, stage: 'ready', doc, transcript, error: null };
+    this.positions.summary = 0;
+    if (this.mode === 'summary') this.setDoc(doc, { transcript });
+  }
+
+  private setSummaryLength(length: SummaryLength) {
+    this.sum.length = length;
+    this.sum.loaded = true;
+    void summaryLengthItem.setValue(length);
+    this.sum.token++;
+    this.sum.error = null;
+    this.notice = null;
+    if (this.sum.doc) {
+      this.sum.doc = null;
+      this.sum.transcript = [];
+      this.positions.summary = 0;
+      if (this.mode === 'summary') {
+        this.controller.stop();
+        this.controller.load([]);
+        this.doc = null;
+      }
+    }
+    this.sum.stage = 'setup';
+    this.render();
+    if (this.mode === 'summary') void this.findCachedSummary();
+  }
+
+  private summaryAction() {
+    if (this.sum.stage === 'setup') void this.writeSummary();
+  }
+
   private generateAudio(from: number) {
     if (!this.pod.doc) return;
     this.pod.stage = 'voiced';
@@ -421,8 +572,15 @@ class ReaderApp {
     this.controller.play(from);
   }
 
-  /** Play/pause button and Alt+Shift+R. In podcast mode, nothing is generated before its button is pressed. */
+  /**
+   * Play/pause button and Alt+Shift+R. In podcast mode, nothing is generated before its button is
+   * pressed; in summary mode, play before a summary exists writes one.
+   */
   private onToggle() {
+    if (this.mode === 'summary' && this.sum.stage !== 'ready') {
+      if (this.sum.stage === 'setup') return void this.writeSummary();
+      return;
+    }
     if (this.mode === 'podcast') {
       if (this.pod.stage === 'scripted') return this.generateAudio(this.controller.state.index);
       if (this.pod.stage !== 'voiced') {
@@ -489,7 +647,7 @@ class ReaderApp {
     return true;
   }
 
-  private setDoc(doc: ArticleDoc, extra?: { voices: VoiceSettings[]; transcript: TranscriptItem[] }) {
+  private setDoc(doc: ArticleDoc, extra?: { voices?: VoiceSettings[]; transcript: TranscriptItem[] }) {
     this.doc = doc;
     this.message = null;
     this.chunkVoices = extra?.voices ?? null;
@@ -642,6 +800,25 @@ class ReaderApp {
         handle: (msg) => (msg.type === 'script' ? resolve(msg.script) : reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'))),
       });
       port.postMessage({ type: 'script', id, request, cacheKey, cacheOnly } satisfies TtsPortRequest);
+    }).finally(() => clearInterval(keepAlive));
+  }
+
+  private requestSummary(request: SummaryRequest, cacheKey: string, cacheOnly: boolean): Promise<Summary> {
+    const port = this.connect();
+    const id = this.nextId++;
+    const keepAlive = setInterval(() => {
+      try {
+        this.port?.postMessage({ type: 'ping' } satisfies TtsPortRequest);
+      } catch {
+        // port closed; the pending request is rejected on disconnect
+      }
+    }, 20_000);
+    return new Promise<Summary>((resolve, reject) => {
+      this.pending.set(id, {
+        index: -1,
+        handle: (msg) => (msg.type === 'summary' ? resolve(msg.summary) : reject(new Error(msg.type === 'error' ? msg.message : 'Unexpected reply'))),
+      });
+      port.postMessage({ type: 'summary', id, request, cacheKey, cacheOnly } satisfies TtsPortRequest);
     }).finally(() => clearInterval(keepAlive));
   }
 
@@ -840,6 +1017,8 @@ class ReaderApp {
       setHost: (which, v) => this.setHost(which, v),
       setPodcastLength: (l) => this.setPodcastLength(l),
       podcastAction: () => this.podcastAction(),
+      setSummaryLength: (l) => this.setSummaryLength(l),
+      summaryAction: () => this.summaryAction(),
       previewVoice: (v) => void this.previewVoice(v),
       close: () => this.reset(),
     });
@@ -865,8 +1044,9 @@ class ReaderApp {
         state: { status: 'idle', index: 0, total: 0, buffering: false },
         transcript: null,
         podcast: null,
+        summary: null,
       });
-    } else if (this.doc || this.mode === 'podcast') {
+    } else if (this.doc || this.mode !== 'article') {
       this.ui.render(this.viewBase());
     }
   }
@@ -918,10 +1098,44 @@ class ReaderApp {
     return text ? { text, tone: 'info', actions: [] } : null;
   }
 
+  private summaryPanel(): SummaryPanel {
+    const { stage, length } = this.sum;
+    const button: SummaryPanel['button'] =
+      stage === 'setup'
+        ? {
+            label: 'Summarize',
+            tip: `Sarvam-105B summarises this page (${SUMMARY_COST_TEXT}), then it's read aloud`,
+            disabled: false,
+            busy: false,
+          }
+        : stage === 'writing'
+          ? { label: 'Summarizing…', tip: 'Usually takes 5–20 seconds', disabled: true, busy: true }
+          : null;
+    return { length, button, locked: stage === 'writing' };
+  }
+
+  private summaryNotice(): Notice | null {
+    if (this.sum.error) {
+      return {
+        text: this.sum.error,
+        tone: 'err',
+        actions: /key|settings|credit/i.test(this.sum.error) ? [{ label: 'Open settings', run: () => send({ type: 'open-options' }) }] : [],
+      };
+    }
+    const text =
+      this.sum.stage === 'setup'
+        ? 'Press “Summarize” (or ▶) to hear a short summary of this page instead of all of it.'
+        : this.sum.stage === 'writing'
+          ? 'Summarising the page with Sarvam-105B… usually 5–20 seconds.'
+          : null;
+    return text ? { text, tone: 'info', actions: [] } : null;
+  }
+
   private viewBase() {
     const doc = this.doc;
     const state = this.controller.state;
     const podcastMode = this.mode === 'podcast';
+    const summaryMode = this.mode === 'summary';
     const remainingChars = doc ? doc.chunks.slice(state.index).reduce((n, c) => n + c.speech.length, 0) : 0;
     const minutes = (doc?.speechChars ?? 0) / CHARS_PER_SEC / this.voice.pace / 60;
     const errorNotice: Notice | null =
@@ -937,7 +1151,7 @@ class ReaderApp {
             ],
           }
         : null;
-    const notice = this.notice ?? errorNotice ?? (podcastMode ? this.podcastNotice() : null);
+    const notice = this.notice ?? errorNotice ?? (podcastMode ? this.podcastNotice() : summaryMode ? this.summaryNotice() : null);
     const speakerOf = (i: number) => {
       const block = doc?.chunks[i]?.block;
       const side = this.transcript?.find((t) => t.block === block)?.side;
@@ -945,9 +1159,10 @@ class ReaderApp {
     };
     const articleTitle = this.articleDoc?.title || document.title || 'Read Aloud';
     return {
-      title: podcastMode ? `Podcast · ${articleTitle}` : doc?.title || articleTitle,
+      title: podcastMode ? `Podcast · ${articleTitle}` : summaryMode ? `Summary · ${articleTitle}` : doc?.title || articleTitle,
       mode: this.mode,
       podcast: podcastMode ? this.podcastPanel() : null,
+      summary: summaryMode ? this.summaryPanel() : null,
       notice,
       state,
       chunkText: (i: number) => {
@@ -955,10 +1170,10 @@ class ReaderApp {
         const who = podcastMode ? speakerOf(i) : undefined;
         return who ? `${who}: ${text}` : text;
       },
-      summary: doc
+      overview: doc
         ? `${podcastMode ? `${this.transcript?.length ?? 0} turns` : `${doc.chunks.length} sentences`} · ~${Math.max(1, Math.round(minutes))} min · ≈ ${formatInr(doc.speechChars)} to synthesise (cached sentences are free)`
         : '',
-      transcript: podcastMode ? this.transcript : null,
+      transcript: this.mode === 'article' ? null : this.transcript,
       hostNames: podcastMode && this.transcript?.length ? { left: this.pod.names.A, right: this.pod.names.B } : null,
       remainingMinutes: remainingChars / CHARS_PER_SEC / this.voice.pace / 60,
       pace: this.voice.pace,

@@ -7,9 +7,10 @@ extension handles.
 
 ## What is sent, and to whom
 
-- **Page text you ask it to read.** When you start reading (or create a podcast), the extension sends the text of
+- **Page text you ask it to read.** When you start reading (or create a podcast or summary), the extension sends the text of
   the article, sentence by sentence, to Sarvam AI (`api.sarvam.ai`) to turn it into speech. For podcast mode it
-  also sends the article text to Sarvam AI's language model to write the conversation script.
+  also sends the article text to Sarvam AI's language model to write the conversation script; for summary mode,
+  to write the summary.
 - **Your Sarvam API key** is sent to Sarvam AI with each request, as Sarvam requires.
 
 Nothing is sent until you start reading.
@@ -33,7 +34,7 @@ All of this stays in your browser's extension storage and is never sent to the d
 - Your Sarvam API key and settings (voice, speed, reading preferences).
 - Synthesised audio for sentences you've listened to (so replaying doesn't cost credits again), capped at a size
   you choose; clear it any time from the settings page.
-- Podcast scripts for recently converted pages.
+- Podcast scripts and summaries for recently converted pages.
 - Your last reading position per article (page address without query string) so you can resume.
 - Monthly usage counters (characters and requests) for the cost estimate.
 

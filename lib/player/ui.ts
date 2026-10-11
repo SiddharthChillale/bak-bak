@@ -1,6 +1,7 @@
 // Floating player, docked bottom-right (articles are usually centred, so it stays
 // clear of the text), isolated in a closed shadow root.
 
+import type { SummaryLength } from '../summary';
 import { prettyVoice } from '../voices';
 import type { PlayerState } from './controller';
 
@@ -14,12 +15,20 @@ export interface TranscriptItem {
   block: number;
   /** First chunk index of this item. */
   start: number;
-  /** Host 1 speaks on the left, host 2 on the right. */
-  side: 'left' | 'right';
+  /** Host 1 speaks on the left, host 2 on the right; summary paragraphs span the width. */
+  side: 'left' | 'right' | 'full';
   text: string;
 }
 
-export type PlayerMode = 'article' | 'podcast';
+export type PlayerMode = 'article' | 'podcast' | 'summary';
+
+/** Primary action button of a mode panel; null hides it. */
+export interface PanelButton {
+  label: string;
+  tip: string;
+  disabled: boolean;
+  busy: boolean;
+}
 
 /** Podcast setup panel: pick hosts, write the script, then generate audio, all on demand. */
 export interface PodcastPanel {
@@ -28,8 +37,17 @@ export interface PodcastPanel {
   hostB: string;
   length: 'short' | 'standard';
   /** Primary button; null hides it (audio already generated). */
-  button: { label: string; tip: string; disabled: boolean; busy: boolean } | null;
+  button: PanelButton | null;
   /** Host/length pickers are locked while the script is being written. */
+  locked: boolean;
+}
+
+/** Summary panel: pick a length, then summarise (the summary is read aloud once written). */
+export interface SummaryPanel {
+  length: SummaryLength;
+  /** Primary button; null hides it (summary already written). */
+  button: PanelButton | null;
+  /** The length picker is locked while the summary is being written. */
   locked: boolean;
 }
 
@@ -37,7 +55,8 @@ export interface PlayerView {
   title: string;
   mode: PlayerMode;
   podcast?: PodcastPanel | null;
-  /** Podcast transcript as a chat; each message is clickable to play from there. */
+  summary?: SummaryPanel | null;
+  /** Podcast transcript as a chat, or summary paragraphs; each is clickable to play from there. */
   transcript?: TranscriptItem[] | null;
   /** Host names shown once above the chat (left host, right host). */
   hostNames?: { left: string; right: string } | null;
@@ -46,7 +65,8 @@ export interface PlayerView {
   state: PlayerState;
   /** Display text of chunk i (for the "now reading" line). */
   chunkText(i: number): string;
-  summary: string;
+  /** Shown on the "now reading" line while idle. */
+  overview: string;
   remainingMinutes: number;
   pace: number;
   paces: readonly number[];
@@ -73,6 +93,8 @@ export interface PlayerHandlers {
   setPodcastLength(length: 'short' | 'standard'): void;
   podcastAction(): void;
   previewVoice(voice: string): void;
+  setSummaryLength(length: SummaryLength): void;
+  summaryAction(): void;
   openSettings(): void;
   close(): void;
 }
@@ -88,6 +110,7 @@ const ICONS = {
   nextBlock: '<path d="M12 6.5v11a.8.8 0 0 0 1.25.66l7.15-5.5a.8.8 0 0 0 0-1.32l-7.15-5.5A.8.8 0 0 0 12 6.5Zm-9 0v11a.8.8 0 0 0 1.25.66l7.15-5.5a.8.8 0 0 0 0-1.32L4.25 5.84A.8.8 0 0 0 3 6.5Z"/>',
   read: '<path d="M4 5.5h16a1 1 0 1 1 0 2H4a1 1 0 0 1 0-2Zm0 5.5h16a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2Zm0 5.5h10a1 1 0 1 1 0 2H4a1 1 0 1 1 0-2Z"/>',
   podcast: '<path d="M12 2.5a3.5 3.5 0 0 1 3.5 3.5v6a3.5 3.5 0 1 1-7 0V6A3.5 3.5 0 0 1 12 2.5Zm-6 9a1 1 0 0 1 1 1 5 5 0 0 0 10 0 1 1 0 1 1 2 0 7 7 0 0 1-6 6.93V21h2.5a1 1 0 1 1 0 2h-7a1 1 0 1 1 0-2H11v-1.57A7 7 0 0 1 5 12.5a1 1 0 0 1 1-1Z"/>',
+  summary: '<path d="M10 2.5a1 1 0 0 1 .95.68l1.35 4.02 4.02 1.35a1 1 0 0 1 0 1.9l-4.02 1.35-1.35 4.02a1 1 0 0 1-1.9 0L7.7 11.8 3.68 10.45a1 1 0 0 1 0-1.9L7.7 7.2l1.35-4.02A1 1 0 0 1 10 2.5Zm8 11a.8.8 0 0 1 .76.55l.62 1.87 1.87.62a.8.8 0 0 1 0 1.52l-1.87.62-.62 1.87a.8.8 0 0 1-1.52 0l-.62-1.87-1.87-.62a.8.8 0 0 1 0-1.52l1.87-.62.62-1.87A.8.8 0 0 1 18 13.5Z"/>',
   cursor: '<path d="M5.5 3.4v15.3a.7.7 0 0 0 1.2.48l3.5-3.6 2.25 5.2a.9.9 0 0 0 1.18.47l1.5-.66a.9.9 0 0 0 .47-1.18l-2.24-5.14 4.94-.32a.7.7 0 0 0 .44-1.2L6.7 2.92a.7.7 0 0 0-1.2.48Z"/>',
   settings: '<path d="M10.3 2.6a1 1 0 0 1 1-.6h1.4a1 1 0 0 1 1 .6l.6 1.7a7.6 7.6 0 0 1 1.6.9l1.8-.4a1 1 0 0 1 1.1.5l.7 1.2a1 1 0 0 1-.1 1.2l-1.2 1.3a7.7 7.7 0 0 1 0 1.9l1.2 1.3a1 1 0 0 1 .1 1.2l-.7 1.2a1 1 0 0 1-1.1.5l-1.8-.4a7.6 7.6 0 0 1-1.6.9l-.6 1.7a1 1 0 0 1-1 .6h-1.4a1 1 0 0 1-1-.6l-.6-1.7a7.6 7.6 0 0 1-1.6-.9l-1.8.4a1 1 0 0 1-1.1-.5l-.7-1.2a1 1 0 0 1 .1-1.2l1.2-1.3a7.7 7.7 0 0 1 0-1.9L4.1 8.1A1 1 0 0 1 4 6.9l.7-1.2a1 1 0 0 1 1.1-.5l1.8.4a7.6 7.6 0 0 1 1.6-.9l.6-1.7ZM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" transform="translate(0 1)"/>',
   minimize: '<rect x="5" y="11" width="14" height="2" rx="1"/>',
@@ -122,8 +145,10 @@ const CSS_TEXT = `
   /* Never taller than the window: the chat shrinks first, then the bar scrolls. */
   max-height: calc(100vh - 32px); overflow: auto; overscroll-behavior: contain;
 }
-.top { display: flex; gap: 6px; align-items: flex-start; }
-.meta { flex: 1; min-width: 0; }
+/* Mode switch and window buttons on the first row; title and status get the full width below. */
+.top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.top .modes { margin-right: auto; }
+.meta { order: 1; flex: 1 0 100%; min-width: 0; }
 .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .now { color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 1.4em; }
 .now.err { color: var(--err); display: block; }
@@ -169,6 +194,11 @@ button.mode[aria-pressed="true"] { background: var(--bg); color: var(--accent); 
 .pod .pick button svg { width: 14px; height: 14px; }
 .pod button:disabled { opacity: .4; cursor: default; }
 .pod > label:nth-of-type(3) select { width: 100%; max-width: none; }
+.sum { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end;
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.sum[hidden] { display: none; }
+.sum label { display: grid; gap: 3px; min-width: 0; font-size: 12px; color: var(--muted); }
+.sum select { width: 100%; max-width: none; }
 button.primary { width: 100%; height: 34px; padding: 0 14px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-weight: 600; white-space: nowrap; }
 button.primary:hover { background: var(--accent); filter: brightness(1.08); }
 button.primary[aria-disabled="true"] { opacity: .5; cursor: default; filter: none; }
@@ -187,6 +217,8 @@ button.primary.busy { animation: pulse 1.2s ease-in-out infinite; }
   opacity: .62; transition: opacity .2s ease; }
 .msg.left { align-self: flex-start; background: var(--bubble-left); border-radius: 14px 14px 14px 4px; }
 .msg.right { align-self: flex-end; background: var(--bubble-right); border-radius: 14px 14px 4px 14px; }
+.msg.full { max-width: none; padding: 4px 8px; border-radius: 8px; }
+.msg.full.on { background: var(--bubble-left); }
 .msg:hover, .msg.on { opacity: 1; }
 .msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .pill {
@@ -241,6 +273,8 @@ export class PlayerBar {
               data-tip="Read mode: read the page aloud, sentence by sentence">${icon('read')}Read</button>
             <button class="mode" data-act="mode-podcast" data-el="modePodcast" aria-pressed="false"
               data-tip="Podcast mode: two hosts discuss this page (you write the script first)">${icon('podcast')}Podcast</button>
+            <button class="mode" data-act="mode-summary" data-el="modeSummary" aria-pressed="false"
+              data-tip="Summary mode: hear a short summary of this page instead of all of it">${icon('summary')}Summary</button>
           </div>
           <button data-act="minimize" aria-label="Minimize player" data-tip="Minimize the player">${icon('minimize')}</button>
           <button data-act="close" aria-label="Stop and close" data-tip="Stop reading and close the player">${icon('close')}</button>
@@ -266,9 +300,18 @@ export class PlayerBar {
           </label>
           <button class="primary" data-act="podAction" data-el="podAction"></button>
         </div>
+        <div class="sum" data-el="sum" hidden>
+          <label>Length
+            <select data-el="sumLength" aria-label="Summary length" data-tip="How long the summary should be">
+              <option value="brief">Brief (~1 min)</option>
+              <option value="detailed">Detailed (~2 min)</option>
+            </select>
+          </label>
+          <button class="primary" data-act="sumAction" data-el="sumAction"></button>
+        </div>
         <div class="chat" data-el="chat" hidden>
           <div class="chathead"><span data-el="nameLeft"></span><span data-el="nameRight"></span></div>
-          <div class="transcript" data-el="transcript" role="list" aria-label="Podcast conversation"></div>
+          <div class="transcript" data-el="transcript" role="list"></div>
         </div>
         <div class="controls">
           <div class="transport">
@@ -284,7 +327,7 @@ export class PlayerBar {
           <button class="text" data-act="pick" data-el="pick" aria-pressed="false" aria-label="Jump to a sentence"
             data-tip="Jump to: click any sentence on the page to read from its start (Esc cancels; Alt+click works anytime)">${icon('cursor')}Jump to</button>
           <select data-el="pace" aria-label="Speed" data-tip="Reading speed (applies from the next sentence)"></select>
-          <select data-el="voice" aria-label="Voice" data-tip="Reading voice (podcast hosts are chosen in Podcast mode)"></select>
+          <select data-el="voice" aria-label="Voice" data-tip="Reading voice, also used for summaries (podcast hosts are chosen in Podcast mode)"></select>
           <button class="end" data-act="settings" aria-label="Settings" data-tip="Settings: API key, voices, usage, cache">${icon('settings')}</button>
         </div>
       </div>
@@ -312,9 +355,13 @@ export class PlayerBar {
         case 'close': return this.h.close();
         case 'mode-article': return this.h.setMode('article');
         case 'mode-podcast': return this.h.setMode('podcast');
+        case 'mode-summary': return this.h.setMode('summary');
         case 'podAction':
           if (this.els.podAction!.getAttribute('aria-disabled') === 'true') return;
           return this.h.podcastAction();
+        case 'sumAction':
+          if (this.els.sumAction!.getAttribute('aria-disabled') === 'true') return;
+          return this.h.summaryAction();
         case 'previewA': return this.h.previewVoice((this.els.hostA as HTMLSelectElement).value);
         case 'previewB': return this.h.previewVoice((this.els.hostB as HTMLSelectElement).value);
         case 'minimize':
@@ -340,6 +387,9 @@ export class PlayerBar {
     this.els.hostB!.addEventListener('change', (e) => this.h.setHost('B', (e.target as HTMLSelectElement).value));
     this.els.podLength!.addEventListener('change', (e) =>
       this.h.setPodcastLength((e.target as HTMLSelectElement).value === 'standard' ? 'standard' : 'short'),
+    );
+    this.els.sumLength!.addEventListener('change', (e) =>
+      this.h.setSummaryLength((e.target as HTMLSelectElement).value === 'detailed' ? 'detailed' : 'brief'),
     );
     // Don't auto-scroll the chat out from under the pointer.
     this.els.transcript!.addEventListener('pointerenter', () => (this.pointerInTranscript = true));
@@ -418,7 +468,7 @@ export class PlayerBar {
       now.classList.add('attn');
       now.textContent = 'Press ▶ to start: the browser needs a click on the page before it plays audio.';
     } else if (state.status === 'idle') {
-      now.textContent = v.summary;
+      now.textContent = v.overview;
     } else if (state.status === 'ended') {
       now.textContent = 'Finished. Press ▶ to start over.';
     } else {
@@ -441,13 +491,16 @@ export class PlayerBar {
       voice.replaceChildren(...list.map((id) => new Option(prettyVoice(id), id)), new Option('More voices…', MORE_VOICES));
       voice.value = v.voice;
     }
-    // Page sentences belong to Read mode; in Podcast mode, the chat messages are the jump targets.
-    this.els.pick!.hidden = v.mode === 'podcast';
+    // Page sentences belong to Read mode; in the other modes, the chat messages are the jump targets.
+    this.els.pick!.hidden = v.mode !== 'article';
     this.els.voice!.hidden = v.mode === 'podcast';
     this.els.pick!.setAttribute('aria-pressed', String(v.picking));
     this.els.modeArticle!.setAttribute('aria-pressed', String(v.mode === 'article'));
     this.els.modePodcast!.setAttribute('aria-pressed', String(v.mode === 'podcast'));
+    this.els.modeSummary!.setAttribute('aria-pressed', String(v.mode === 'summary'));
+    this.els.transcript!.setAttribute('aria-label', v.mode === 'summary' ? 'Summary' : 'Podcast conversation');
     this.renderPodcast(v.podcast ?? null);
+    this.renderSummary(v.summary ?? null);
     this.renderChat(v.transcript ?? null, v.hostNames ?? null, state.index);
     this.repositionTip();
   }
@@ -469,15 +522,17 @@ export class PlayerBar {
     const len = this.els.podLength as HTMLSelectElement;
     len.value = p.length;
     len.disabled = p.locked;
-    const btn = this.els.podAction as HTMLButtonElement;
-    btn.hidden = !p.button;
-    if (p.button) {
-      btn.textContent = p.button.label;
-      btn.dataset.tip = p.button.tip;
-      // aria-disabled (not disabled) so the tooltip can still explain why.
-      btn.setAttribute('aria-disabled', String(p.button.disabled));
-      btn.classList.toggle('busy', p.button.busy);
-    }
+    renderButton(this.els.podAction as HTMLButtonElement, p.button);
+  }
+
+  private renderSummary(p: SummaryPanel | null) {
+    const box = this.els.sum!;
+    box.hidden = !p;
+    if (!p) return;
+    const len = this.els.sumLength as HTMLSelectElement;
+    len.value = p.length;
+    len.disabled = p.locked;
+    renderButton(this.els.sumAction as HTMLButtonElement, p.button);
   }
 
   /**
@@ -555,7 +610,7 @@ export class PlayerBar {
           const b = document.createElement('button');
           b.className = `msg ${t.side}`;
           b.setAttribute('role', 'listitem');
-          b.dataset.tip = 'Play from here';
+          b.dataset.tip = t.side === 'full' ? 'Read from here' : 'Play from here';
           b.textContent = t.text;
           b.addEventListener('click', () => this.h.playFrom(t.start));
           return b;
@@ -573,6 +628,16 @@ export class PlayerBar {
     // Keep the current message in the clear (unfaded) area without scrolling the page.
     if (el && !this.pointerInTranscript) box.scrollTo({ top: el.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
   }
+}
+
+function renderButton(btn: HTMLButtonElement, b: PanelButton | null) {
+  btn.hidden = !b;
+  if (!b) return;
+  btn.textContent = b.label;
+  btn.dataset.tip = b.tip;
+  // aria-disabled (not disabled) so the tooltip can still explain why.
+  btn.setAttribute('aria-disabled', String(b.disabled));
+  btn.classList.toggle('busy', b.busy);
 }
 
 function attachStyles(root: ShadowRoot, css: string) {

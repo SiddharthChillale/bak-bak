@@ -18,6 +18,7 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 > - Play/pause, sentence and paragraph skipping, speed control, dozens of voices.
 > - Remembers where you stopped on each article.
 > - Podcast mode: pick two hosts and turn the article into a short conversation, script first, audio on demand.
+> - Summary mode: hear a one- or two-minute summary of the article instead of the whole thing.
 > - Audio is cached on your device, so replaying never costs credits twice; see your estimated monthly spend.
 >
 > Requires your own Sarvam AI API key (sign up at dashboard.sarvam.ai; new accounts get free credits).
@@ -29,7 +30,7 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 - **Single purpose:** Read web page text aloud using Sarvam AI text-to-speech.
 - **Permission justifications:**
   - `storage`: save settings, the user's API key, reading positions and usage counters locally.
-  - `contextMenus`: "Read this page aloud", "Read aloud from here" and "Make a podcast from this page…" menu items.
+  - `contextMenus`: "Read this page aloud", "Read aloud from here", "Make a podcast from this page…" and "Summarize this page aloud" menu items.
   - `activeTab` + `scripting`: when the user clicks the toolbar button, a menu item or a shortcut, inject the player
     into that tab to extract the article, highlight the sentence being read and show the player.
   - Host permission `https://api.sarvam.ai/*`: send text to Sarvam's TTS and chat APIs.

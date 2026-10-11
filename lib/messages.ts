@@ -1,5 +1,6 @@
 import type { PodcastScript, ScriptRequest } from './podcast';
 import type { SarvamModel } from './sarvam';
+import type { Summary, SummaryRequest } from './summary';
 
 /** Port name for content-script ⇄ background synthesis traffic. */
 export const TTS_PORT = 'tts';
@@ -15,9 +16,11 @@ export type TtsPortRequest =
   | { type: 'synthesize'; id: number; text: string; voice: VoiceSettings }
   /** Write a two-host podcast script for an article (Sarvam-105B). */
   | { type: 'script'; id: number; request: ScriptRequest; cacheKey: string; cacheOnly?: boolean }
+  /** Summarise an article to be read aloud (Sarvam-105B). */
+  | { type: 'summary'; id: number; request: SummaryRequest; cacheKey: string; cacheOnly?: boolean }
   /** Drop a request that hasn't been sent to Sarvam yet (no-op once in flight). */
   | { type: 'cancel'; id: number }
-  /** Keeps Chrome's service worker awake during long requests (podcast scripts). */
+  /** Keeps Chrome's service worker awake during long requests (podcast scripts, summaries). */
   | { type: 'ping' };
 
 /**
@@ -27,6 +30,7 @@ export type TtsPortRequest =
 export type TtsPortResponse =
   | { type: 'audio'; id: number; base64: string; mime: string; cached: boolean }
   | { type: 'script'; id: number; script: PodcastScript; cached: boolean }
+  | { type: 'summary'; id: number; summary: Summary; cached: boolean }
   | { type: 'error'; id: number; message: string; status?: number; cancelled?: boolean };
 
 export type PlayerCommand =
@@ -36,6 +40,8 @@ export type PlayerCommand =
   | 'read-from-selection'
   /** Turn the page into a two-host podcast. */
   | 'podcast'
+  /** Summarise the page and read the summary aloud. */
+  | 'summarize'
   | 'next'
   | 'prev'
   /** Another tab started reading. */

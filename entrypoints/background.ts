@@ -4,6 +4,7 @@ import type { PlayerCommand, ToBackground, ToContent, TtsPortRequest, TtsPortRes
 import { TTS_PORT } from '@/lib/messages';
 import { generateScript, type PodcastScript, type ScriptRequest } from '@/lib/podcast';
 import { SarvamError, bytesToBase64, synthesize } from '@/lib/sarvam';
+import { generateSummary, type Summary, type SummaryRequest } from '@/lib/summary';
 import { ensureInjected, syncAutoDetect } from '@/lib/inject';
 import { apiKeyItem, autoDetectItem, cacheLimitMbItem, transportItem } from '@/lib/settings';
 import { recordUsage } from '@/lib/usage';
@@ -11,6 +12,7 @@ import { recordUsage } from '@/lib/usage';
 const MENU_READ_PAGE = 'read-page';
 const MENU_READ_FROM_HERE = 'read-from-selection';
 const MENU_PODCAST = 'podcast';
+const MENU_SUMMARIZE = 'summarize';
 const LANG = 'en-IN';
 /** Concurrent Sarvam requests across all tabs. */
 const MAX_INFLIGHT = 2;
@@ -21,6 +23,7 @@ export default defineBackground(() => {
       browser.contextMenus.create({ id: MENU_READ_PAGE, title: 'Read this page aloud', contexts: ['page'] });
       browser.contextMenus.create({ id: MENU_READ_FROM_HERE, title: 'Read aloud from here', contexts: ['selection'] });
       browser.contextMenus.create({ id: MENU_PODCAST, title: 'Make a podcast from this page…', contexts: ['page'] });
+      browser.contextMenus.create({ id: MENU_SUMMARIZE, title: 'Summarize this page aloud', contexts: ['page'] });
     });
   });
 
@@ -37,6 +40,7 @@ export default defineBackground(() => {
     if (info.menuItemId === MENU_READ_PAGE) void sendCommand(tab?.id, 'read-page');
     if (info.menuItemId === MENU_READ_FROM_HERE) void sendCommand(tab?.id, 'read-from-selection');
     if (info.menuItemId === MENU_PODCAST) void sendCommand(tab?.id, 'podcast');
+    if (info.menuItemId === MENU_SUMMARIZE) void sendCommand(tab?.id, 'summarize');
   });
 
   browser.commands.onCommand.addListener(async (command, tab) => {
@@ -116,6 +120,7 @@ function handleTtsPort(port: Browser.runtime.Port) {
     }
     if (msg.type === 'synthesize' && open) void serve({ port, id: msg.id, text: msg.text, voice: msg.voice });
     if (msg.type === 'script' && open) void writeScript(port, msg.id, msg.request, msg.cacheKey, msg.cacheOnly);
+    if (msg.type === 'summary' && open) void writeSummary(port, msg.id, msg.request, msg.cacheKey, msg.cacheOnly);
   });
 }
 
@@ -183,18 +188,57 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   }
 }
 
-// ---- Podcast scripts --------------------------------------------------------
+// ---- Podcast scripts and summaries (Sarvam-105B), cached by request ---------
 
 const MAX_SCRIPTS = 30;
 const scriptsItem = storage.defineItem<Record<string, { script: PodcastScript; at: number }>>('local:podcastScripts', {
   fallback: {},
 });
+const MAX_SUMMARIES = 50;
+const summariesItem = storage.defineItem<Record<string, { summary: Summary; at: number }>>('local:summaries', {
+  fallback: {},
+});
 
-async function writeScript(port: Browser.runtime.Port, id: number, request: ScriptRequest, key: string, cacheOnly = false) {
+function writeScript(port: Browser.runtime.Port, id: number, request: ScriptRequest, key: string, cacheOnly = false) {
+  return writeCached(port, id, key, cacheOnly, {
+    read: async (k) => (await scriptsItem.getValue())[k]?.script,
+    generate: (apiKey) => generateScript(apiKey, request),
+    reply: (script, cached) => ({ type: 'script', id, script, cached }),
+    write: async (script) => {
+      const all = { ...(await scriptsItem.getValue()), [key]: { script, at: Date.now() } };
+      await scriptsItem.setValue(newest(all, MAX_SCRIPTS));
+    },
+  });
+}
+
+function writeSummary(port: Browser.runtime.Port, id: number, request: SummaryRequest, key: string, cacheOnly = false) {
+  return writeCached(port, id, key, cacheOnly, {
+    read: async (k) => (await summariesItem.getValue())[k]?.summary,
+    generate: (apiKey) => generateSummary(apiKey, request),
+    reply: (summary, cached) => ({ type: 'summary', id, summary, cached }),
+    write: async (summary) => {
+      const all = { ...(await summariesItem.getValue()), [key]: { summary, at: Date.now() } };
+      await summariesItem.setValue(newest(all, MAX_SUMMARIES));
+    },
+  });
+}
+
+async function writeCached<T>(
+  port: Browser.runtime.Port,
+  id: number,
+  key: string,
+  cacheOnly: boolean,
+  io: {
+    read(key: string): Promise<T | undefined>;
+    generate(apiKey: string): Promise<T>;
+    reply(value: T, cached: boolean): TtsPortResponse;
+    write(value: T): Promise<void>;
+  },
+) {
   try {
-    const cached = (await scriptsItem.getValue())[key];
+    const cached = await io.read(key);
     if (cached) {
-      reply(port, { type: 'script', id, script: cached.script, cached: true });
+      reply(port, io.reply(cached, true));
       return;
     }
     if (cacheOnly) {
@@ -203,12 +247,9 @@ async function writeScript(port: Browser.runtime.Port, id: number, request: Scri
     }
     const apiKey = await apiKeyItem.getValue();
     if (!apiKey) throw new SarvamError('Add your Sarvam API key in the extension settings.', 401);
-    const script = await withRetry(() => generateScript(apiKey, request), 2);
-    reply(port, { type: 'script', id, script, cached: false });
-    const all = { ...(await scriptsItem.getValue()), [key]: { script, at: Date.now() } };
-    const keys = Object.keys(all).sort((a, b) => all[b]!.at - all[a]!.at);
-    for (const k of keys.slice(MAX_SCRIPTS)) delete all[k];
-    await scriptsItem.setValue(all);
+    const value = await withRetry(() => io.generate(apiKey), 2);
+    reply(port, io.reply(value, false));
+    await io.write(value);
   } catch (e) {
     reply(port, {
       type: 'error',
@@ -217,6 +258,13 @@ async function writeScript(port: Browser.runtime.Port, id: number, request: Scri
       status: e instanceof SarvamError ? e.status : undefined,
     });
   }
+}
+
+/** Keep the `max` most recent entries. */
+function newest<T extends { at: number }>(all: Record<string, T>, max: number): Record<string, T> {
+  const keys = Object.keys(all).sort((a, b) => all[b]!.at - all[a]!.at);
+  for (const k of keys.slice(max)) delete all[k];
+  return all;
 }
 
 function reply(port: Browser.runtime.Port, msg: TtsPortResponse) {
