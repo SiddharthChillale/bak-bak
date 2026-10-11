@@ -60,6 +60,9 @@ nav a { position: relative; height: 34px; display: flex; align-items: center; pa
 nav a:hover { text-decoration: none; color: var(--fg); }
 nav a.on { color: var(--ink); }
 .saved { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); padding: 0 12px; }
+.extlinks { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: -8px; }
+.extlink { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; font-size: 12px; font-weight: 500; color: var(--muted); transition: color .2s ease; }
+.extlink:hover { color: var(--fg); text-decoration: none; }
 
 main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 section { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px; scroll-margin-top: 24px; }
