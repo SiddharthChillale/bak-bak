@@ -32,6 +32,20 @@ describe('parseScript', () => {
   it('throws when nothing usable came back', () => {
     expect(() => parseScript('I cannot help with that.')).toThrow(/podcast script/);
   });
+
+  it('strips delivery cues the voice would read aloud', () => {
+    const content =
+      '{"turns":[{"speaker":"A","text":"[chuckle] Wait, really? (laughs) That\'s wild [pause] ."},{"speaker":"B","text":"*sighs* Yes, (2024 figures) it is."},{"speaker":"A","text":"[empathetic tone]"}]}';
+    expect(parseScript(content).turns).toEqual([
+      { speaker: 'A', text: "Wait, really? That's wild." },
+      { speaker: 'B', text: 'Yes, (2024 figures) it is.' },
+    ]);
+  });
+
+  it('strips cues in the lenient (truncated) path too', () => {
+    const s = parseScript('{"turns":[{"speaker":"A","text":"[pause] Okay."},{"speaker":"B","text":"Cut');
+    expect(s.turns).toEqual([{ speaker: 'A', text: 'Okay.' }]);
+  });
 });
 
 describe('buildMessages', () => {
@@ -41,5 +55,13 @@ describe('buildMessages', () => {
     expect(msgs[0]!.content).toContain('Deven');
     expect(msgs[1]!.content).toContain('[…truncated]');
     expect(msgs[1]!.content.length).toBeLessThan(MAX_ARTICLE_CHARS + 200);
+  });
+
+  it('has no template placeholders and follows the chosen length', () => {
+    const short = buildMessages({ title: 'T', text: 'body', hosts, length: 'short' })[0]!.content;
+    const standard = buildMessages({ title: 'T', text: 'body', hosts, length: 'standard' })[0]!.content;
+    expect(short).not.toMatch(/\[(Insert|e\.g\.|Beginner)/);
+    expect(short).toContain('about 700 words');
+    expect(standard).toContain('about 1400 words');
   });
 });

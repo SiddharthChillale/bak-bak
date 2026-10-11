@@ -29,40 +29,30 @@ export const LLM_MODEL = 'sarvam-105b';
 /** Article characters sent to the LLM (≈ 15k tokens; the model has a 128k context). */
 export const MAX_ARTICLE_CHARS = 60_000;
 const TARGET_WORDS: Record<PodcastLength, number> = { short: 700, standard: 1400 };
+const TARGET_MINUTES: Record<PodcastLength, string> = { short: 'about 5 minutes', standard: 'about 10 minutes' };
 /** Fits the Starter tier's 4,096 output-token cap with reasoning off. */
 const MAX_TOKENS = 4000;
 
 export function buildMessages(req: ScriptRequest) {
   const { A, B } = req.hosts;
   const words = TARGET_WORDS[req.length];
-  // const system = [
-  //   'You write scripts for a two-host explainer podcast, spoken in natural Indian English.',
-  //   `Hosts: ${A} (speaker "A", the lead host who has read the article closely) and ${B} (speaker "B", a curious co-host who asks sharp, practical questions and reacts naturally).`,
-  //   'Rules:',
-  //   '- Use only facts from the article. Do not invent numbers, names, quotes or claims.',
-  //   '- Warm, conversational and clear. Short turns of 1 to 4 sentences; the hosts address each other by name now and then.',
-  //   '- Explain jargon and expand abbreviations the first time they appear.',
-  //   '- Open with a one-line hook and the article title; end with a short recap of the key takeaways.',
-  //   '- Plain spoken text only: no stage directions, sound effects, markdown, lists, URLs or emojis.',
-  //   `- Length: about ${words} words in total.`,
-  //   'Output ONLY a JSON object, with no text before or after it:',
-  //   '{"title": string, "turns": [{"speaker": "A" | "B", "text": string}]}',
-  // ].join('\n');
   const podcast_prompt = `Act as an expert AI podcast scriptwriter and audio director.
   Your task is to write a natural, engaging, two-person conversational podcast script (style similar to Google NotebookLM Audio Overviews or Google AI Studio multi-speaker formats).
 
   ### Context & Topic
-  - Topic / Source Material: [Insert your topic, notes, article, or paste text here]
-  - Target Duration: [e.g., 5 to 7 minutes / ~800 to 1,000 words]
-  - Target Audience Level: [Beginner / Intermediate / Deep Dive]
+  - Source Material: the article in the user message. Use only facts from it; do not invent numbers, names, quotes or claims.
+  - Target Duration: ${TARGET_MINUTES[req.length]} of audio, about ${words} words in total.
+  - Target Audience Level: curious general listeners, not experts. Explain jargon and expand abbreviations the first time they appear.
+  - Language: natural Indian English.
 
   ### Host Roles & Voices
-  - Speaker 1 (Host ${A} / Curious Lead): Energetic, asks the questions the listener is thinking, frames the big picture, uses relatable analogies.
-  - Speaker 2 (Host ${B} / Subject Expert): Knowledgeable, breaks down complex ideas simply, reacts naturally, adds depth without sounding like a textbook.
+  - Speaker 1 (speaker "A", Host ${A} / Curious Lead): Energetic, asks the questions the listener is thinking, frames the big picture, uses relatable analogies.
+  - Speaker 2 (speaker "B", Host ${B} / Subject Expert): Knowledgeable, breaks down complex ideas simply, reacts naturally, adds depth without sounding like a textbook.
 
-  ### Formatting & Audio Cues
-  - Use spoken-word formatting: short sentences, conversational interruptions ("Right," "Wait—so you're saying..."), natural laughs or brief thinking pauses.
-  - Include subtle audio or delivery cues in brackets where helpful, such as [pause], [chuckle], or [empathetic tone].
+  ### Formatting & Delivery
+  - Every word of "text" is read aloud by a text-to-speech voice, so write only what the host says.
+  - Use spoken-word formatting: short sentences, conversational interruptions ("Right," "Wait—so you're saying..."), natural reactions ("Ha!", "Hmm,") and brief thinking pauses.
+  - Show pauses and tone through punctuation and word choice (commas, "...", an em dash), never with bracketed or parenthesised cues such as [pause], [chuckle] or (laughs), stage directions, sound effects, markdown, URLs or emojis.
   - Avoid formal essay structures, rigid bullet-point readouts, or robotic transitions ("In conclusion...", "Moving on to point number two...").
 
   ### Structure Requirements
@@ -71,7 +61,7 @@ export function buildMessages(req: ScriptRequest) {
   3. Core Exploration: Back-and-forth breakdown of the 2-3 most important takeaways, using a real-world analogy.
   4. Perspective Shift: A moment where one host challenges an assumption or looks at the flip side of the topic.
   5. Reflective Close: A quick, punchy takeaway or actionable thought for the listener to walk away with.
-  Output ONLY a JSON object, with no text before or after it:,
+  Output ONLY a JSON object, with no text before or after it:
 
   {"title": string, "turns": [{"speaker": "A" | "B", "text": string}]}`
   const system = podcast_prompt;
@@ -130,7 +120,7 @@ export function parseScript(content: string, hosts?: Record<HostId, string>): Po
     turns.flatMap((t) => {
       const turn = t as { speaker?: unknown; text?: unknown };
       const speaker = toSpeaker(turn.speaker);
-      const text = typeof turn.text === 'string' ? turn.text.replace(/\s+/g, ' ').trim() : '';
+      const text = typeof turn.text === 'string' ? spoken(turn.text) : '';
       return speaker && text ? [{ speaker, text }] : [];
     });
 
@@ -158,11 +148,24 @@ export function parseScript(content: string, hosts?: Record<HostId, string>): Po
     } catch {
       continue;
     }
-    if (speaker && text.trim()) turns.push({ speaker, text: text.replace(/\s+/g, ' ').trim() });
+    text = spoken(text);
+    if (speaker && text) turns.push({ speaker, text });
   }
   if (!turns.length) throw new Error("Couldn't read the podcast script the model returned. Try again.");
   const title = /"title"\s*:\s*("(?:[^"\\]|\\.)*")/.exec(content)?.[1];
   return { title: title ? (JSON.parse(title) as string) : '', turns };
+}
+
+/** Delivery cues the voice would read out literally: [pause], [empathetic tone], (laughs), *chuckles*. */
+const CUE = /\[[^\]]*\]|\((?:laughs?|laughing|chuckles?|chuckling|giggles?|sighs?|pauses?|beat|smiles?|grins?)[^)]*\)|\*[^*]+\*/gi;
+
+/** A turn's text as it should be spoken: cues removed, whitespace collapsed. */
+function spoken(text: string): string {
+  return text
+    .replace(CUE, ' ')
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Rough cost of voicing a script (Bulbul, per character). */
