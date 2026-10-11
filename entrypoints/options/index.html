@@ -148,19 +148,25 @@
         <section id="voiceLab" class="stack" hidden>
           <div class="intro">
             <h2>Voice lab</h2>
-            <p class="muted">Hear voices on your own text and compare latency.</p>
+            <p class="muted">Hear voices in any Bulbul language on your own text, and compare latency. Reading still uses English; this is for exploring.</p>
           </div>
+          <div class="field">
+            <div class="lblrow"><span class="lbl">Language</span><span class="hint" id="labLangHint"></span></div>
+            <div class="langs" id="labLangs" role="group" aria-label="Language"></div>
+          </div>
+          <div class="field"><span class="lbl">Lab voice</span><div id="labVoiceMenu"></div><select id="labVoice" hidden></select></div>
           <textarea id="sample" rows="3">The monsoon arrived early this year, and with it came a quiet relief across the city. Shopkeepers rolled up their shutters at 7:30 a.m., chai stalls filled up by eight, and the traffic on MG Road was, for once, almost bearable.</textarea>
           <div class="hint" id="cost"></div>
           <div class="btns">
             <button type="button" class="solid" id="play">▶ Play selected voice</button>
             <button type="button" id="audition">Audition shortlist</button>
+            <button type="button" id="everyLang">This speaker in every language</button>
             <button type="button" id="latency">Latency test · REST vs stream ×3</button>
             <button type="button" class="ghost" id="stop">Stop</button>
           </div>
           <div class="tablewrap">
             <table>
-              <thead><tr><th>Voice</th><th>Transport</th><th>Headers</th><th>First byte</th><th>Total</th><th>Audio</th><th></th></tr></thead>
+              <thead><tr><th>Voice</th><th>Language</th><th>Transport</th><th>Headers</th><th>First byte</th><th>Total</th><th>Audio</th><th></th></tr></thead>
               <tbody id="results"></tbody>
             </table>
           </div>

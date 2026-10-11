@@ -3,7 +3,7 @@ import { cacheGet, cacheKey, cachePut } from '@/lib/cache';
 import type { PlayerCommand, ToBackground, ToContent, TtsPortRequest, TtsPortResponse, VoiceSettings } from '@/lib/messages';
 import { TTS_PORT } from '@/lib/messages';
 import { generateScript, type PodcastScript, type ScriptRequest } from '@/lib/podcast';
-import { SarvamError, bytesToBase64, synthesize } from '@/lib/sarvam';
+import { SarvamError, bytesToBase64, synthesize, type LanguageCode } from '@/lib/sarvam';
 import { generateSummary, type Summary, type SummaryRequest } from '@/lib/summary';
 import { ensureInjected, syncAutoDetect } from '@/lib/inject';
 import { apiKeyItem, autoDetectItem, cacheLimitMbItem, transportItem } from '@/lib/settings';
@@ -13,7 +13,7 @@ const MENU_READ_PAGE = 'read-page';
 const MENU_READ_FROM_HERE = 'read-from-selection';
 const MENU_PODCAST = 'podcast';
 const MENU_SUMMARIZE = 'summarize';
-const LANG = 'en-IN';
+const LANG: LanguageCode = 'en-IN';
 /** Concurrent Sarvam requests across all tabs. */
 const MAX_INFLIGHT = 2;
 

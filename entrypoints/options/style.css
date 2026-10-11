@@ -195,6 +195,11 @@ th, td { text-align: left; padding: 9px 12px; }
 td { border-top: 1px solid var(--line); }
 td button { width: 24px; height: 24px; border-radius: 50%; color: var(--accent); }
 td.err { color: var(--err); }
+.langs { display: flex; flex-wrap: wrap; gap: 6px; }
+.langs button { height: 32px; padding: 0 12px; border-radius: 999px; background: var(--chip); font-weight: 500; font-size: 12.5px; transition: background .15s ease, color .15s ease; }
+.langs button:hover { background: var(--soft2); }
+.langs button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.langs small { margin-left: 5px; font-size: 11px; opacity: .7; font-variant-numeric: tabular-nums; }
 tr.playing td { color: var(--ink); font-weight: 600; }
 
 @media (max-width: 760px) {

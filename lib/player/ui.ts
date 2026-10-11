@@ -118,6 +118,7 @@ const ICONS = {
 };
 
 type Size = 'A' | 'B' | 'C';
+type Corner = { x: 'left' | 'right'; y: 'top' | 'bottom' };
 type Menu = null | 'pace' | 'voice' | 'hostA' | 'hostB';
 
 const MODES: PlayerMode[] = ['article', 'podcast', 'summary'];
@@ -141,7 +142,7 @@ const CSS_TEXT = `
   --accent: #2790C4; --ink: #1d6f98; --soft: rgba(39,144,196,.14); --accent-fg: #fff; --err: #b3261e;
   --left: rgba(29,27,25,.06); --right: rgba(39,144,196,.13); --hl: rgba(39,144,196,.18);
   --ring: rgba(255,255,255,.55);
-  position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
+  position: fixed; z-index: 2147483647;
   --sans: "ReadAloud Sans", "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --serif: "ReadAloud Serif", Newsreader, Georgia, serif;
   font: 13px/1.4 var(--sans);
@@ -153,6 +154,12 @@ const CSS_TEXT = `
     --ink: #6cc0ea; --soft: rgba(39,144,196,.3); --err: #ff8a80;
     --left: rgba(255,255,255,.09); --right: rgba(39,144,196,.26); --hl: rgba(39,144,196,.35); --ring: rgba(255,255,255,.1); }
 }
+/* Anchored to one of the four viewport corners; the player grows and shrinks away from it. */
+.wrap[data-x="right"] { right: 16px; } .wrap[data-x="left"] { left: 16px; }
+.wrap[data-y="bottom"] { bottom: 16px; } .wrap[data-y="top"] { top: 16px; }
+.wrap.dragging { cursor: grabbing; }
+.wrap.snapping { transition: transform var(--snap-ms, 800ms) cubic-bezier(.33,1,.68,1); }
+@media (prefers-reduced-motion: reduce) { .wrap.snapping { transition-duration: .12s; } }
 button, select { font: inherit; color: inherit; border: 0; background: transparent; padding: 0; cursor: pointer; }
 button { display: inline-grid; place-items: center; border-radius: 50%; transition: transform .15s ease, background .15s ease, opacity .2s ease; }
 button:hover { background: var(--chip-hover); }
@@ -162,12 +169,14 @@ button:disabled { opacity: .4; cursor: default; }
 svg { fill: currentColor; }
 
 .shell {
-  position: relative; overflow: hidden; transform-origin: 100% 100%;
+  position: relative; overflow: hidden; transform-origin: var(--ox, 100%) var(--oy, 100%);
   background: var(--glass); -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4);
   border: 1px solid var(--ring);
   box-shadow: 0 0 0 1px rgba(29,27,25,.08), 0 14px 36px rgba(29,27,25,.2), 0 2px 6px rgba(29,27,25,.08);
-  transition: width .5s cubic-bezier(.32,.72,0,1), height .5s cubic-bezier(.32,.72,0,1), border-radius .5s cubic-bezier(.32,.72,0,1);
+  transition: width .5s cubic-bezier(.32,.72,0,1), height .5s cubic-bezier(.32,.72,0,1), border-radius .5s cubic-bezier(.32,.72,0,1), box-shadow .25s ease;
 }
+.wrap.dragging .shell { box-shadow: 0 0 0 1px rgba(29,27,25,.08), 0 24px 52px rgba(29,27,25,.26), 0 4px 12px rgba(29,27,25,.1); }
+.wrap[data-x="left"] { --ox: 0%; } .wrap[data-y="top"] { --oy: 0%; }
 .wrap[data-size="A"] .shell { width: 128px; height: 40px; border-radius: 20px; }
 .wrap[data-size="B"] .shell { width: 300px; height: 56px; border-radius: 28px; }
 .wrap[data-size="C"] .shell { width: min(340px, calc(100vw - 32px)); height: min(400px, calc(100vh - 32px)); border-radius: 22px; }
@@ -175,6 +184,8 @@ svg { fill: currentColor; }
 
 .layer { position: absolute; right: 0; bottom: 0; display: flex; opacity: 0; transform: scale(.96); pointer-events: none;
   transition: opacity .22s ease, transform .35s cubic-bezier(.32,.72,0,1); }
+.wrap[data-x="left"] .layer { right: auto; left: 0; }
+.wrap[data-y="top"] .layer { bottom: auto; top: 0; }
 .wrap[data-size="A"] .la, .wrap[data-size="B"] .lb, .wrap[data-size="C"] .lc { opacity: 1; transform: none; pointer-events: auto; transition-delay: .14s; }
 .wrap.picking .layer { opacity: 0; pointer-events: none; transition-delay: 0s; }
 .wrap.picking .lp { opacity: 1; transform: none; pointer-events: auto; transition-delay: .14s; }
@@ -396,6 +407,7 @@ svg { fill: currentColor; }
 .tip { position: absolute; z-index: 3; pointer-events: none; max-width: 240px; width: max-content; padding: 5px 9px; border-radius: 7px; font-size: 12px; line-height: 1.35;
   background: var(--fg); color: var(--solid); box-shadow: 0 4px 14px rgba(0,0,0,.2); transform: translate(-50%, calc(-100% - 8px)); opacity: 0; transition: opacity .12s ease; }
 .tip.on { opacity: 1; }
+.tip.below { transform: translate(-50%, 8px); }
 `;
 
 const q = <T extends HTMLElement = HTMLElement>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
@@ -416,6 +428,7 @@ export class PlayerBar {
   private lastNotice = '';
   private paceDrag = false;
   private hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  private snapTimer: ReturnType<typeof setTimeout> | undefined;
   /** Re-anchors a visible tooltip after the layout changes. */
   private repositionTip: () => void = () => {};
 
@@ -426,6 +439,8 @@ export class PlayerBar {
     wrap.className = 'wrap';
     wrap.dataset.size = 'C';
     wrap.dataset.mode = 'article';
+    wrap.dataset.x = 'right';
+    wrap.dataset.y = 'bottom';
     wrap.innerHTML = `
       <div class="shell" role="region" aria-label="Read aloud player">
         <div class="layer la">
@@ -941,25 +956,82 @@ export class PlayerBar {
     sl.addEventListener('pointercancel', end);
   }
 
-  /** Drag by any grip; the player stays anchored by its bottom-right corner. */
+  /**
+   * Drag by any grip; on release the player snaps to the nearest viewport corner. A quick
+   * flick carries it toward the corner it was thrown at. The drag itself is a transform over
+   * the current anchor, and the snap is a FLIP from where it was dropped to the new anchor.
+   */
   private setupDrag() {
+    const wrap = this.wrap;
     this.wrap.addEventListener('pointerdown', (e) => {
       const grip = (e.target as HTMLElement).closest('[data-drag]');
       if (!grip || e.button !== 0) return;
       e.preventDefault();
-      const start = { x: e.clientX, y: e.clientY, r: parseFloat(this.wrap.style.right || '16'), b: parseFloat(this.wrap.style.bottom || '16') };
+      // Pick it up from wherever it is, even mid-snap.
+      const seen = wrap.getBoundingClientRect();
+      clearTimeout(this.snapTimer);
+      wrap.classList.remove('snapping');
+      wrap.style.transform = '';
+      const base = wrap.getBoundingClientRect();
+      const from = { x: seen.left - base.left, y: seen.top - base.top };
+      if (from.x || from.y) wrap.style.transform = `translate(${from.x}px, ${from.y}px)`;
+      const start = { x: e.clientX, y: e.clientY };
+      let last = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+      let v = { x: 0, y: 0 };
+      let moved = false;
+
       const move = (ev: PointerEvent) => {
-        const box = this.rect;
-        const maxR = window.innerWidth - (box?.width ?? 0);
-        const maxB = window.innerHeight - (box?.height ?? 0);
-        this.wrap.style.right = `${Math.min(Math.max(0, start.r - (ev.clientX - start.x)), Math.max(0, maxR))}px`;
-        this.wrap.style.bottom = `${Math.min(Math.max(0, start.b - (ev.clientY - start.y)), Math.max(0, maxB))}px`;
-        this.repositionTip();
+        const dx = ev.clientX - start.x;
+        const dy = ev.clientY - start.y;
+        if (!moved && Math.hypot(dx, dy) < 3) return;
+        moved = true;
+        wrap.classList.add('dragging');
+        const dt = ev.timeStamp - last.t;
+        if (dt > 0) {
+          v = { x: 0.7 * ((ev.clientX - last.x) / dt) + 0.3 * v.x, y: 0.7 * ((ev.clientY - last.y) / dt) + 0.3 * v.y };
+          last = { x: ev.clientX, y: ev.clientY, t: ev.timeStamp };
+        }
+        const tx = clamp(from.x + dx, -base.left, window.innerWidth - base.right);
+        const ty = clamp(from.y + dy, -base.top, window.innerHeight - base.bottom);
+        wrap.style.transform = `translate(${tx}px, ${ty}px) scale(1.02)`;
       };
-      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+
+      const up = (ev: PointerEvent) => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+        if (!moved && !from.x && !from.y) return;
+        // A pause before letting go means "put it here", not a throw.
+        if (ev.timeStamp - last.t > 90) v = { x: 0, y: 0 };
+        const dropped = wrap.getBoundingClientRect();
+        const cx = dropped.left + dropped.width / 2 + v.x * 180;
+        const cy = dropped.top + dropped.height / 2 + v.y * 180;
+        this.snapTo({ x: cx < window.innerWidth / 2 ? 'left' : 'right', y: cy < window.innerHeight / 2 ? 'top' : 'bottom' }, dropped);
+      };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     });
+  }
+
+  /** Re-anchor to a corner, animating from the box's current on-screen spot. */
+  private snapTo(corner: Corner, from: DOMRect) {
+    const wrap = this.wrap;
+    wrap.dataset.x = corner.x;
+    wrap.dataset.y = corner.y;
+    wrap.style.transform = '';
+    const to = wrap.getBoundingClientRect();
+    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+    wrap.style.transform = `translate(${dx}px, ${dy}px) scale(${from.width / to.width})`;
+    // Longer trips get more time, so a cross-screen move doesn't feel rushed nor a short hop sluggish.
+    const ms = Math.round(clamp(500 + Math.hypot(dx, dy) * 0.6, 600, 950));
+    wrap.style.setProperty('--snap-ms', `${ms}ms`);
+    void wrap.offsetWidth;
+    wrap.classList.remove('dragging');
+    wrap.classList.add('snapping');
+    wrap.style.transform = '';
+    this.snapTimer = setTimeout(() => wrap.classList.remove('snapping'), ms + 50);
   }
 
   /**
@@ -983,8 +1055,11 @@ export class PlayerBar {
       const r = el.getBoundingClientRect();
       const half = tip.offsetWidth / 2;
       const x = Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8);
+      // Flip below the control when there's no room above (player docked at the top).
+      const below = r.top - tip.offsetHeight - 8 < 4;
+      tip.classList.toggle('below', below);
       tip.style.left = `${x - w.left}px`;
-      tip.style.top = `${r.top - w.top}px`;
+      tip.style.top = `${(below ? r.bottom : r.top) - w.top}px`;
     };
     const show = (el: HTMLElement, delay: number) => {
       clearTimeout(timer);
@@ -1050,6 +1125,8 @@ export class PlayerBar {
     if (el && !this.pointerInTranscript) box.scrollTo({ top: el.offsetTop - box.clientHeight / 3, behavior: 'smooth' });
   }
 }
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(Math.max(n, lo), Math.max(lo, hi));
 
 function attachStyles(root: ShadowRoot, css: string) {
   // Constructed stylesheets aren't subject to the page's CSP style-src; fall back to <style>
