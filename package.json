@@ -1,5 +1,5 @@
 {
-  "name": "web-readaloud-extension",
+  "name": "bak-bak",
   "description": "Listen to any web article in natural Indian-English voices (Sarvam AI), with sentence highlighting, jump-to-line and a two-host podcast mode.",
   "private": true,
   "version": "0.1.0",
@@ -7,7 +7,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/SiddharthChillale/web-readaloud-extension.git"
+    "url": "https://github.com/SiddharthChillale/bak-bak.git"
   },
   "packageManager": "pnpm@10.30.3",
   "scripts": {

@@ -77,4 +77,4 @@ future version ever handles data in a new way, it will be described here before 
 ## Contact
 
 Questions or requests: sidcp.work@gmail.com, or open an issue at
-<https://github.com/SiddharthChillale/web-readaloud-extension/issues>.
+<https://github.com/SiddharthChillale/bak-bak/issues>.

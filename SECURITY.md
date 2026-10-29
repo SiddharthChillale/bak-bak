@@ -4,7 +4,7 @@
 
 Please report security problems **privately**, not in a public issue:
 
-1. Go to the [Security tab](https://github.com/SiddharthChillale/web-readaloud-extension/security) and choose
+1. Go to the [Security tab](https://github.com/SiddharthChillale/bak-bak/security) and choose
    **Report a vulnerability**. Only the maintainer can see the report.
 2. Include what you found, the steps to reproduce it, the browser and extension version, and what an attacker
    could do with it.

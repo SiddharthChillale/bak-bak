@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SiddharthChillale/web-readaloud-extension/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/SiddharthChillale/web-readaloud-extension?include_prereleases&label=release" /></a>
-  <a href="https://github.com/SiddharthChillale/web-readaloud-extension/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SiddharthChillale/web-readaloud-extension/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/SiddharthChillale/bak-bak/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/SiddharthChillale/bak-bak?include_prereleases&label=release" /></a>
+  <a href="https://github.com/SiddharthChillale/bak-bak/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SiddharthChillale/bak-bak/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="Chrome" src="https://img.shields.io/badge/Chrome-supported-4285F4" />
   <img alt="Firefox" src="https://img.shields.io/badge/Firefox-140%2B-FF7139" />
   <img alt="Safari" src="https://img.shields.io/badge/Safari-26%2B-0FB5EE" />
@@ -58,7 +58,7 @@ Want a different take? Switch to **Podcast** mode and two hosts of your choosing
 ## Get started
 
 1. **Get a Sarvam API key** at [dashboard.sarvam.ai](https://dashboard.sarvam.ai). New accounts get free credits.
-2. **Download the pack for your browser** from the [latest release](https://github.com/SiddharthChillale/web-readaloud-extension/releases/latest):
+2. **Download the pack for your browser** from the [latest release](https://github.com/SiddharthChillale/bak-bak/releases/latest):
 
    | Browser | Pack | Install |
    |---|---|---|
@@ -157,13 +157,13 @@ git tag v0.2.0 && git push origin v0.2.0
 
 The [Release workflow](.github/workflows/release.yml) checks the tag matches the version, runs the tests, builds
 all three packs plus the Firefox source bundle, and publishes them on the
-[Releases page](https://github.com/SiddharthChillale/web-readaloud-extension/releases).
+[Releases page](https://github.com/SiddharthChillale/bak-bak/releases).
 
 ## Contributing
 
 Contributions are welcome: bug reports, pages it reads badly, fixes and features. Start with
 [CONTRIBUTING.md](CONTRIBUTING.md), and please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Questions and
-ideas go in [Discussions](https://github.com/SiddharthChillale/web-readaloud-extension/discussions); security
+ideas go in [Discussions](https://github.com/SiddharthChillale/bak-bak/discussions); security
 problems go through private reporting (see [SECURITY.md](SECURITY.md)).
 
 ## Sponsor

@@ -25,7 +25,7 @@ These affect every store; fix them once.
 1. ~~**Name.**~~ Done (2026-10-29): renamed to **Bak-Bak**, which doesn't use Sarvam AI's name. Keep the
    "Powered by Sarvam AI" and "not affiliated" wording in the description.
 2. **Privacy policy at a public URL.** [PRIVACY.md](../PRIVACY.md) has the contact email; link to it
-   (e.g. `https://github.com/SiddharthChillale/web-readaloud-extension/blob/main/PRIVACY.md`, or publish it with
+   (e.g. `https://github.com/SiddharthChillale/bak-bak/blob/main/PRIVACY.md`, or publish it with
    GitHub Pages). Every store asks for this URL.
 3. ~~**Permissions.**~~ Done: the extension runs only when invoked (`activeTab` + `scripting`); all-sites access
    is an optional permission requested only when the user turns on "Detect articles automatically". No broad

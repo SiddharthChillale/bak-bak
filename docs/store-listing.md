@@ -43,7 +43,7 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
   podcast scripts and summaries) and **Authentication information** (the user's own Sarvam API key, sent only to
   Sarvam AI). Nothing else is collected. Certify all three: not sold or transferred to third parties outside the
   approved use, not used for unrelated purposes, not used for creditworthiness or lending.
-- **Privacy policy URL:** `https://github.com/SiddharthChillale/web-readaloud-extension/blob/main/PRIVACY.md`. It
+- **Privacy policy URL:** `https://github.com/SiddharthChillale/bak-bak/blob/main/PRIVACY.md`. It
   covers what's collected, why, sharing (Sarvam AI only), retention and deletion, security, and the Limited Use
   statement the User Data Policy asks for.
 - **Remote code:** none. All code is bundled.

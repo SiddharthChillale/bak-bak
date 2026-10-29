@@ -7,11 +7,11 @@ By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Ways to help
 
-- **Report a bug.** Open an [issue](https://github.com/SiddharthChillale/web-readaloud-extension/issues/new/choose)
+- **Report a bug.** Open an [issue](https://github.com/SiddharthChillale/bak-bak/issues/new/choose)
   with the page URL, your browser and version, and what you expected to happen. Pages it reads badly
   (skips the story, reads the menu, highlights the wrong line) are especially useful.
 - **Suggest a feature.** Open a feature request, or start a thread in
-  [Discussions](https://github.com/SiddharthChillale/web-readaloud-extension/discussions) if it's still an idea.
+  [Discussions](https://github.com/SiddharthChillale/bak-bak/discussions) if it's still an idea.
 - **Send a pull request.** Look for issues labelled `good first issue` or `help wanted`. For anything bigger
   than a small fix, open an issue first so we can agree on the approach before you spend time on it.
 - **Report a security problem** privately, as described in [SECURITY.md](SECURITY.md). Please don't open a
@@ -23,8 +23,8 @@ You need Node 22+ and [pnpm](https://pnpm.io) (the version is pinned in `package
 it up).
 
 ```bash
-git clone https://github.com/<you>/web-readaloud-extension.git
-cd web-readaloud-extension
+git clone https://github.com/<you>/bak-bak.git
+cd bak-bak
 pnpm install
 pnpm dev              # Chrome with hot reload (pnpm dev:firefox for Firefox)
 ```
