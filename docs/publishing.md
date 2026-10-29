@@ -33,8 +33,8 @@ These affect every store; fix them once.
 4. **Reviewers need to test it, and it needs your Sarvam key.** Create a separate Sarvam key with a small spend
    cap for reviewers, and put it plus step-by-step test instructions in each store's "notes for reviewer" field.
    Apple in particular rejects apps it can't fully exercise. Revoke and rotate the key after approval.
-5. **Firefox add-on ID.** Pick the permanent ID now (it can never change), e.g. `read-aloud@siddharthchillale.dev`,
-   in `wxt.config.ts` → `browser_specific_settings.gecko.id`.
+5. ~~**Firefox add-on ID.**~~ Done (2026-10-29): `bak-bak@siddharthchillale.dev` in `wxt.config.ts` →
+   `browser_specific_settings.gecko.id`. It becomes permanent with the first AMO submission, so don't change it after.
 6. **Support URL.** Use the GitHub issues page.
 7. **Store assets** (make once, reuse):
    - Screenshots of the real extension on a real article (Read mode, Jump to, Podcast chat), at **1280×800**.

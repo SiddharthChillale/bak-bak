@@ -54,7 +54,7 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
   Nov 2025); `strict_min_version` is 140.
 - Upload `pnpm zip:firefox` output: the extension zip and the sources zip (minified bundles need sources). Build
   instructions for reviewers: `pnpm install && pnpm build:firefox` (Node 22, pnpm 10).
-- Choose an add-on ID you own before the first submission (currently `readaloud-sarvam@local`); it can't change later.
+- Add-on ID: `bak-bak@siddharthchillale.dev`. It's fixed once the first submission is made.
 
 ## Safari / Mac App Store
 
