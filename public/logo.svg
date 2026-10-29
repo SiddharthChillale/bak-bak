@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Bak-Bak</title>
+  <defs>
+    <clipPath id="tile"><rect x="4" y="4" width="120" height="120" rx="28" /></clipPath>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#2790c4" />
+  <g clip-path="url(#tile)" fill="#fffdf9" stroke="#fffdf9" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+    <!-- neck and chest, running off the bottom edge -->
+    <path d="M34 56 C30 80 22 102 16 134 L96 134 C92 112 70 102 64 84 C61 75 62 69 66 64 Z" />
+    <!-- head -->
+    <circle cx="50" cy="45" r="22" stroke="none" />
+    <!-- bill -->
+    <path d="M64 41 C76 44 86 45 96 42 Q105 41 105 50 Q104 59 93 59 L64 61 Z" />
+  </g>
+  <circle cx="54" cy="39" r="5" fill="#2790c4" />
+</svg>

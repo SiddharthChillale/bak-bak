@@ -19,9 +19,9 @@ export default defineConfig({
     },
   }),
   manifest: ({ browser }) => ({
-    name: 'Read Aloud (Sarvam)',
+    name: 'Bak-Bak',
     description: 'Read web articles aloud with natural Indian-English voices from Sarvam AI.',
-    action: { default_title: 'Read Aloud' },
+    action: { default_title: 'Bak-Bak' },
     // activeTab + scripting: the extension only touches a page when the user invokes it
     // (toolbar button, context menu, shortcut). Site-wide article detection is opt-in.
     permissions: ['storage', 'contextMenus', 'activeTab', 'scripting'],
@@ -61,8 +61,8 @@ export default defineConfig({
     }),
   }),
   zip: {
-    artifactTemplate: 'read-aloud-sarvam-{{version}}-{{browser}}.zip',
-    sourcesTemplate: 'read-aloud-sarvam-{{version}}-sources.zip',
+    artifactTemplate: 'bak-bak-{{version}}-{{browser}}.zip',
+    sourcesTemplate: 'bak-bak-{{version}}-sources.zip',
   },
   hooks: {
     'build:manifestGenerated': (wxt, manifest) => {

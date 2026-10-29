@@ -1027,7 +1027,7 @@ class ReaderApp {
 
   private showMessage(text: string, opts: { title?: string; tone?: Notice['tone']; actions?: Notice['actions'] } = {}) {
     this.message = {
-      title: opts.title ?? 'Read Aloud',
+      title: opts.title ?? 'Bak-Bak',
       notice: { text, tone: opts.tone ?? 'info', actions: opts.actions ?? [] },
     };
     this.ensureUi().show();
@@ -1157,7 +1157,7 @@ class ReaderApp {
       const side = this.transcript?.find((t) => t.block === block)?.side;
       return side ? this.pod.names[side === 'left' ? 'A' : 'B'] : undefined;
     };
-    const articleTitle = this.articleDoc?.title || document.title || 'Read Aloud';
+    const articleTitle = this.articleDoc?.title || document.title || 'Bak-Bak';
     return {
       title: podcastMode ? `Podcast · ${articleTitle}` : summaryMode ? `Summary · ${articleTitle}` : doc?.title || articleTitle,
       mode: this.mode,

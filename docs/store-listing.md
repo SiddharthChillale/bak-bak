@@ -4,13 +4,13 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 
 ## Listing
 
-**Name:** Read Aloud (Sarvam)
+**Name:** Bak-Bak
 
 **Summary (≤ 132 chars):** Listen to any article in natural Indian-English voices. Sentence highlighting, jump anywhere, podcast mode.
 
 **Description:**
 
-> Read Aloud turns web articles into natural-sounding speech using Sarvam AI's Bulbul voices, designed for Indian
+> Bak-Bak turns web articles into natural-sounding speech using Sarvam AI's Bulbul voices, designed for Indian
 > English.
 >
 > - Finds the article on the page and reads it sentence by sentence, highlighting as it goes.
@@ -22,6 +22,8 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 > - Audio is cached on your device, so replaying never costs credits twice; see your estimated monthly spend.
 >
 > Requires your own Sarvam AI API key (sign up at dashboard.sarvam.ai; new accounts get free credits).
+>
+> Powered by Sarvam AI. Bak-Bak is an independent project and is not affiliated with Sarvam AI.
 
 **Category:** Accessibility (Chrome) / Other or Education (AMO).
 
@@ -37,9 +39,13 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
   - Optional host permission `<all_urls>` (off by default, requested only if the user enables "Detect articles
     automatically" in Settings): mark readable pages with a dot on the toolbar icon. Runs locally; nothing is sent
     until the user presses play.
-- **Data usage disclosure:** "Website content" is collected (page text sent to Sarvam AI to synthesise speech).
-  Not sold, not used for unrelated purposes, not used for creditworthiness. Privacy policy: PRIVACY.md (host it at
-  a public URL before submitting).
+- **Data usage disclosure:** tick **Website content** (page text sent to Sarvam AI to synthesise speech, write
+  podcast scripts and summaries) and **Authentication information** (the user's own Sarvam API key, sent only to
+  Sarvam AI). Nothing else is collected. Certify all three: not sold or transferred to third parties outside the
+  approved use, not used for unrelated purposes, not used for creditworthiness or lending.
+- **Privacy policy URL:** `https://github.com/SiddharthChillale/web-readaloud-extension/blob/main/PRIVACY.md`. It
+  covers what's collected, why, sharing (Sarvam AI only), retention and deletion, security, and the Limited Use
+  statement the User Data Policy asks for.
 - **Remote code:** none. All code is bundled.
 
 ## AMO
@@ -62,5 +68,4 @@ Drafts for the Chrome Web Store and Firefox Add-ons (AMO) listings, plus the dec
 2. ~~**Permission breadth.**~~ Done (2026-10-11): the extension uses `activeTab` + `scripting` and runs only when
    invoked; site-wide article detection is an opt-in setting with an optional permission.
 3. **Listing assets.** Screenshots (1280×800), a promo tile (440×280) and a hosted privacy-policy URL.
-4. **Name/branding.** Using "Sarvam" in the name may need Sarvam AI's permission; consider a neutral name with
-   "Powered by Sarvam AI" in the description.
+4. ~~**Name/branding.**~~ Done (2026-10-29): renamed to Bak-Bak; the description says "Powered by Sarvam AI".

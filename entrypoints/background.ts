@@ -85,7 +85,7 @@ function setBadge(tabId: number, readerable: boolean) {
   void browser.action.setBadgeText({ tabId, text: readerable ? '•' : '' }).catch(() => undefined);
   void browser.action.setBadgeBackgroundColor({ tabId, color: '#b4532a' }).catch(() => undefined);
   void browser.action
-    .setTitle({ tabId, title: readerable ? 'Read Aloud: article detected (click to read)' : 'Read Aloud' })
+    .setTitle({ tabId, title: readerable ? 'Bak-Bak: article detected (click to read)' : 'Bak-Bak' })
     .catch(() => undefined);
 }
 

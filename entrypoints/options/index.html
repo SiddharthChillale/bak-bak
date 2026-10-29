@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Read Aloud Settings</title>
+    <title>Bak-Bak Settings</title>
     <meta name="manifest.open_in_tab" content="true" />
     <link rel="stylesheet" href="./style.css" />
   </head>
@@ -11,8 +11,8 @@
     <div class="shell">
       <aside>
         <div class="brand">
-          <img src="/icon/96.png" alt="" />
-          <div><b>Read Aloud</b><span>Settings</span></div>
+          <img src="/logo.svg" alt="" />
+          <div><b>Bak-Bak</b><span>Settings</span></div>
         </div>
         <nav id="nav">
           <span class="navthumb" id="navThumb"></span>
@@ -21,6 +21,7 @@
           <a href="#sec-reading">Reading</a>
           <a href="#sec-podcast">Podcast</a>
           <a href="#sec-usage">Usage &amp; cache</a>
+          <a href="#sec-guide">Guide</a>
           <a href="#voiceLab" id="navLab">Voice lab</a>
         </nav>
         <div class="saved"><span class="dot"></span><span id="saved" aria-live="polite">All changes save automatically</span></div>
@@ -34,13 +35,22 @@
             <span>Sponsor</span>
           </a>
         </div>
+        <div class="note">
+          <b>A note from the developer</b>
+          <p>I'm a solo developer, and I made Bak-Bak out of love for the Sarvam team and their work. If you enjoy it, I'd be truly grateful if you'd consider <a href="https://github.com/sponsors/SiddharthChillale" target="_blank" rel="noreferrer">sponsoring me on GitHub</a>.</p>
+          <span>Thank you for listening.</span>
+        </div>
       </aside>
 
       <main>
+        <div class="banner" role="note">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6l-7-3Z M9 12l2 2 4-4"/></svg>
+          <p><b>Bak-Bak keeps none of your data.</b> There are no Bak-Bak servers, accounts, analytics or tracking. When you press play, the text goes straight from your browser to Sarvam AI; your key, settings and cached audio stay on this device. <a href="https://github.com/SiddharthChillale/web-readaloud-extension/blob/main/PRIVACY.md" target="_blank" rel="noreferrer">Privacy policy</a></p>
+        </div>
         <section id="sec-setup" class="stack">
           <div class="intro">
             <h1>Listen to any article.</h1>
-            <p class="muted">Read Aloud uses Sarvam AI's Bulbul voices. Add your own API key once; you pay Sarvam directly for what you listen to.</p>
+            <p class="muted">Bak-Bak uses Sarvam AI's Bulbul voices. Add your own API key once; you pay Sarvam directly for what you listen to.</p>
           </div>
           <div class="steps">
             <div class="step" id="step1"><span class="n">1</span><div><b>Add your API key</b><small>Free credits on new accounts</small></div></div>
@@ -56,7 +66,7 @@
               </div>
               <span class="badge" id="keyBadge"><span class="dot"></span><span id="keyBadgeText">Connected</span></span>
             </div>
-            <div class="hint">Stored only in this browser's local extension storage. Get one at <a href="https://dashboard.sarvam.ai" target="_blank" rel="noreferrer">dashboard.sarvam.ai</a>.</div>
+            <div class="hint">Stored only in this browser's local extension storage. Don't have one yet? See <a href="#sec-guide">the guide</a>.</div>
           </div>
         </section>
 
@@ -110,12 +120,6 @@
             <label class="toggle"><span><b>Skip link previews and embeds</b><small>Another page's headline and summary.</small></span><input id="skipEmbeds" type="checkbox" /></label>
             <label class="toggle"><span><b>Skip image captions</b></span><input id="skipCaptions" type="checkbox" /></label>
           </div>
-          <div class="keys">
-            <span><kbd>Alt+Shift+R</kbd>Read / play-pause</span>
-            <span><kbd>Alt+Shift+.</kbd>Next sentence</span>
-            <span><kbd>Alt+Shift+,</kbd>Previous sentence</span>
-            <span><kbd>Alt+click</kbd>Read from a sentence</span>
-          </div>
         </section>
 
         <section id="sec-podcast" class="stack">
@@ -153,6 +157,69 @@
             <div class="bar"><div id="cacheBar"></div></div>
           </div>
           <div class="hint">Estimated at ₹30 per 10,000 characters (Bulbul v3 list price). Cached sentences are not billed again.</div>
+        </section>
+
+        <section id="sec-guide" class="stack">
+          <div class="intro">
+            <h2>Guide</h2>
+            <p class="muted">Everything you need to get going, plus tips for getting the most out of your credits.</p>
+          </div>
+
+          <div class="guide">
+            <h3>1. Get a Sarvam API key</h3>
+            <p>Bak-Bak speaks with Sarvam AI's voices, so it needs your own Sarvam API key. It's free to sign up, and new accounts get free credits.</p>
+            <ol>
+              <li>Go to <a href="https://dashboard.sarvam.ai" target="_blank" rel="noreferrer">dashboard.sarvam.ai</a> and sign in or create an account.</li>
+              <li>Open the <b>API keys</b> section of the dashboard and create a new key.</li>
+              <li>Copy the key and paste it into <a href="#sec-setup">Setup</a> above. A green <b>Connected</b> badge means it worked.</li>
+            </ol>
+            <p class="hint">You pay Sarvam directly for what you listen to; Bak-Bak itself is free. Your key never leaves this browser except in requests to Sarvam.</p>
+          </div>
+
+          <div class="guide">
+            <h3>2. Start listening</h3>
+            <ul>
+              <li>Open an article and click the Bak-Bak button in the toolbar, or press <kbd>Alt+Shift+R</kbd>.</li>
+              <li>Right-click the page and choose <b>Read this page aloud</b>.</li>
+              <li>To read just part of a page, select the text, right-click and choose <b>Read aloud from here</b>.</li>
+            </ul>
+            <div class="keys">
+              <span><kbd>Alt+Shift+R</kbd>Read / play-pause</span>
+              <span><kbd>Alt+Shift+.</kbd>Next sentence</span>
+              <span><kbd>Alt+Shift+,</kbd>Previous sentence</span>
+              <span><kbd>Alt+click</kbd>Read from a sentence</span>
+            </div>
+          </div>
+
+          <div class="guide">
+            <h3>3. While it's reading</h3>
+            <ul>
+              <li><b>Jump to</b> in the player lets you click any line to start reading from there (<kbd>Esc</kbd> cancels).</li>
+              <li>Collapse the player to a small pill, or drag it to any corner of the window.</li>
+              <li>Switch to <b>Podcast</b> for two hosts talking the article through, or <b>Summary</b> to hear just the gist. Nothing is generated until you press the button.</li>
+            </ul>
+          </div>
+
+          <div class="guide">
+            <h3>Tips for saving credits</h3>
+            <ul>
+              <li>Every sentence you hear is cached on this device, so going back or replaying is free.</li>
+              <li>Skip code blocks, tables, link previews and captions under <a href="#sec-reading">Reading</a> to send less text.</li>
+              <li>Long articles ask before starting; set the limit with <b>Ask before reading longer than</b>.</li>
+              <li><a href="#sec-usage">Usage &amp; cache</a> shows what you've listened to this month and an estimated cost.</li>
+            </ul>
+          </div>
+
+          <div class="guide">
+            <h3>If something isn't working</h3>
+            <ul>
+              <li><b>"Couldn't find an article."</b> Some pages aren't laid out like articles. Select the text you want and choose <b>Read aloud from here</b>.</li>
+              <li><b>Nothing happens on a page.</b> Browsers don't let extensions run on built-in pages (settings, new tab) or extension stores. Try a regular website.</li>
+              <li><b>Key errors or no audio.</b> Check that the key is pasted in full and that your Sarvam account has credits left.</li>
+              <li><b>A shortcut doesn't work.</b> Another extension may use it. Change it at <code>chrome://extensions/shortcuts</code> (or your browser's equivalent).</li>
+              <li>Still stuck? <a href="https://github.com/SiddharthChillale/web-readaloud-extension/issues/new/choose" target="_blank" rel="noreferrer">Open an issue on GitHub</a>.</li>
+            </ul>
+          </div>
         </section>
 
         <section id="voiceLab" class="stack" hidden>

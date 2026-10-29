@@ -442,7 +442,7 @@ export class PlayerBar {
     wrap.dataset.x = 'right';
     wrap.dataset.y = 'bottom';
     wrap.innerHTML = `
-      <div class="shell" role="region" aria-label="Read aloud player">
+      <div class="shell" role="region" aria-label="Bak-Bak player">
         <div class="layer la">
           ${grip}
           <button class="go" data-act="toggle" aria-label="Play" data-tip="Play (Alt+Shift+R)">${playPause}</button>

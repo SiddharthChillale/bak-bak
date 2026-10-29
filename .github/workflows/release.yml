@@ -44,7 +44,7 @@ jobs:
           prerelease=""
           case "$version" in 0.*|*-*) prerelease="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" .output/*.zip \
-            --title "Read Aloud $GITHUB_REF_NAME" \
+            --title "Bak-Bak $GITHUB_REF_NAME" \
             --notes-file notes.md \
             --generate-notes \
             $prerelease

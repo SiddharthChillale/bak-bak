@@ -1,6 +1,6 @@
 # Publishing to the stores
 
-How to get Read Aloud into the **Chrome Web Store**, **Microsoft Edge Add-ons**, **Firefox Add-ons (AMO)** and
+How to get Bak-Bak into the **Chrome Web Store**, **Microsoft Edge Add-ons**, **Firefox Add-ons (AMO)** and
 the **Mac App Store** (Safari). Listing copy and permission justifications are in [store-listing.md](store-listing.md).
 
 _Researched 2026-10-11. Store rules change, so re-check each store's docs before submitting._
@@ -11,7 +11,7 @@ _Researched 2026-10-11. Store rules change, so re-check each store's docs before
 |---|---|---|---|---|
 | Account | Google account, Chrome Web Store developer registration | Microsoft account, Partner Center (Edge program) | Mozilla account | Apple Developer Program |
 | Cost | $5 one-time | Free | Free | $99 / year |
-| What you upload | `read-aloud-sarvam-<v>-chrome.zip` | same Chrome zip (or `wxt zip -b edge`) | `…-firefox.zip` + `…-sources.zip` | `…-safari.zip` via App Store Connect's packager, or an Xcode archive |
+| What you upload | `bak-bak-<v>-chrome.zip` | same Chrome zip (or `wxt zip -b edge`) | `…-firefox.zip` + `…-sources.zip` | `…-safari.zip` via App Store Connect's packager, or an Xcode archive |
 | Review | Days; longer for broad host permissions and new developers | Up to ~7 business days | Automated signing is quick; listed add-ons can also get human review | Typically a few days; App Review guidelines apply |
 | Updates can be automated | Yes (`wxt submit`) | Yes (`wxt submit`) | Yes (`wxt submit`) | Manual (or Xcode/CI tooling later) |
 
@@ -22,10 +22,8 @@ pushed from the release workflow.
 
 These affect every store; fix them once.
 
-1. **Name.** "Read Aloud (Sarvam)" uses Sarvam AI's name. Stores reject listings that look affiliated with
-   another brand without permission (Chrome's impersonation policy, Apple guideline 5.2). Either get written
-   permission from Sarvam AI, or rename (e.g. "Read Aloud: Indian English Voices") and say "Powered by Sarvam AI"
-   in the description. Change `name` in `wxt.config.ts`.
+1. ~~**Name.**~~ Done (2026-10-29): renamed to **Bak-Bak**, which doesn't use Sarvam AI's name. Keep the
+   "Powered by Sarvam AI" and "not affiliated" wording in the description.
 2. **Privacy policy at a public URL.** [PRIVACY.md](../PRIVACY.md) has the contact email; link to it
    (e.g. `https://github.com/SiddharthChillale/web-readaloud-extension/blob/main/PRIVACY.md`, or publish it with
    GitHub Pages). Every store asks for this URL.
@@ -50,9 +48,9 @@ These affect every store; fix them once.
 1. Sign in at <https://addons.mozilla.org/developers/> with a Mozilla account.
 2. **Submit a New Add-on** → **On this site** (listed). (*On your own* = unlisted: signed but self-hosted, which
    is useful for private testers.)
-3. Upload `read-aloud-sarvam-<v>-firefox.zip`. The validator checks the manifest, including
+3. Upload `bak-bak-<v>-firefox.zip`. The validator checks the manifest, including
    `data_collection_permissions` (we declare `websiteContent`) and `strict_min_version` 140.
-4. When asked whether the code is minified, say **yes** and upload `read-aloud-sarvam-<v>-sources.zip`. Build
+4. When asked whether the code is minified, say **yes** and upload `bak-bak-<v>-sources.zip`. Build
    instructions for reviewers: Node 22, pnpm 10, `pnpm install && pnpm build:firefox`; output in
    `.output/firefox-mv3`.
 5. Listing: name, summary, description (from store-listing.md), category, support URL, privacy policy, screenshots,
@@ -73,7 +71,7 @@ These affect every store; fix them once.
 
 1. Open the developer dashboard (<https://chrome.google.com/webstore/devconsole>), register, and pay the one-time
    **$5** fee. Turn on 2-step verification for the Google account (required to publish).
-2. **New item** → upload `read-aloud-sarvam-<v>-chrome.zip`.
+2. **New item** → upload `bak-bak-<v>-chrome.zip`.
 3. **Store listing:** description, category (Accessibility), icon (from the zip), screenshots, promo tile.
 4. **Privacy practices:** single purpose ("Read web page text aloud using Sarvam AI text-to-speech"), a
    justification for each permission (see store-listing.md), data usage: *website content* is transmitted to
@@ -88,7 +86,7 @@ Safari extensions ship inside a small macOS app (the "container app"). Two ways 
 **A. App Store Connect packager (no Xcode):**
 1. Join the Apple Developer Program ($99/yr) as an individual or organisation.
 2. In App Store Connect, create an app record (platform macOS; bundle ID e.g. `dev.siddharthchillale.readaloud`).
-3. Upload `read-aloud-sarvam-<v>-safari.zip` through the Safari web extension packager. Apple converts it into a
+3. Upload `bak-bak-<v>-safari.zip` through the Safari web extension packager. Apple converts it into a
    container app build and makes it available in TestFlight.
 4. Test via TestFlight, then attach the processed build to an App Store version. The upload alone doesn't release
    anything.

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icon/128.png" width="96" height="96" alt="Read Aloud icon" />
+  <img src="public/logo.svg" width="96" height="96" alt="Bak-Bak logo: a duck" />
 </p>
 
-<h1 align="center">Read Aloud</h1>
+<h1 align="center">Bak-Bak</h1>
 
 <p align="center">
   <b>Listen to any article in natural Indian-English voices.</b><br />
@@ -21,7 +21,7 @@
 
 ---
 
-Most read-aloud tools sound robotic, or like they're reading to someone else. **Read Aloud** uses Sarvam AI's
+Most read-aloud tools sound robotic, or like they're reading to someone else. **Bak-Bak** uses Sarvam AI's
 Bulbul voices, built for Indian English, so long reads sound like a person you'd actually listen to. Open an
 article, press play, and it reads the story (not the menus, ads or comments) while highlighting each sentence
 as it goes.
@@ -67,7 +67,7 @@ Want a different take? Switch to **Podcast** mode and two hosts of your choosing
    | Safari 26+ | `…-safari.zip` | Unzip → Settings → Advanced → **Show features for web developers** → Developer → **Add Temporary Extension…** (until Safari quits) |
 
 3. **Open the extension's Settings**, paste your key, and pick a voice. Then open any article and press the
-   toolbar button (or `Alt+Shift+R`).
+   toolbar button (or `Alt+Shift+R`). The **Guide** page in Settings walks through setup and has tips.
 
 Chrome Web Store, Firefox Add-ons and Mac App Store listings are planned.
 
@@ -88,7 +88,7 @@ Every control has a tooltip; hover or tab to it.
 
 ## What it costs
 
-Read Aloud is free; you pay Sarvam AI directly for what you listen to, with your own key.
+Bak-Bak is free; you pay Sarvam AI directly for what you listen to, with your own key.
 
 | | Sarvam price | Typical |
 |---|---|---|
@@ -168,7 +168,7 @@ problems go through private reporting (see [SECURITY.md](SECURITY.md)).
 
 ## Sponsor
 
-Read Aloud is free and open source. If it's useful to you, or you'd like to work with me,
+Bak-Bak is free and open source. If it's useful to you, or you'd like to work with me,
 [sponsor me on GitHub](https://github.com/sponsors/SiddharthChillale).
 
 ## Credits

@@ -1,4 +1,4 @@
-# Contributing to Read Aloud
+# Contributing to Bak-Bak
 
 Thanks for helping out! Bug reports, fixes, new features, docs and testing on different sites and browsers
 are all welcome.
@@ -82,5 +82,5 @@ docs/          publishing and store-listing notes
 
 ## License
 
-Read Aloud is licensed under the [Apache License 2.0](LICENSE). By submitting a contribution you agree that it
+Bak-Bak is licensed under the [Apache License 2.0](LICENSE). By submitting a contribution you agree that it
 is licensed under the same terms (section 5 of the license), and that you have the right to submit it.

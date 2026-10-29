@@ -6,9 +6,9 @@
 # point inside Xcode.app. Then:
 #   pnpm package:safari
 #   open .output/safari-xcode/Read\ Aloud/Read\ Aloud.xcodeproj
-#   → select the "Read Aloud (macOS)" scheme, set your Team (a free Apple ID works
+#   → select the "Bak-Bak (macOS)" scheme, set your Team (a free Apple ID works
 #     for running locally) under Signing & Capabilities, and Run.
-#   → Safari → Settings → Extensions → enable "Read Aloud (Sarvam)".
+#   → Safari → Settings → Extensions → enable "Bak-Bak".
 # Without signing, enable Safari → Develop → Allow Unsigned Extensions (resets on quit).
 set -euo pipefail
 
@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 pnpm build:safari
 
 OUT=.output/safari-xcode
-APP_NAME="Read Aloud"
+APP_NAME="Bak-Bak"
 BUNDLE_ID="${SAFARI_BUNDLE_ID:-local.readaloud.sarvam}"
 
 # Xcode 26 ships `safari-web-extension-packager`; older Xcode has `safari-web-extension-converter`.
